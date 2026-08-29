@@ -1,0 +1,126 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskforge_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-taskforge}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskforge} -d ${POSTGRES_DB:-taskforge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-taskforge}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-taskforge_dev}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-taskforge}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+  scheduler:
+    build:
+      context: ./backend
+      dockerfile: ../Dockerfile.scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  default:
+    name: taskforge_network

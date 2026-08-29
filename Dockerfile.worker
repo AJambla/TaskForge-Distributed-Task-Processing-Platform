@@ -1,0 +1,25 @@
+# TaskForge Worker — Dockerfile
+FROM python:3.12-slim
+
+# Non-root user (SECURITY.md requirement: workers run non-root)
+RUN groupadd -r taskforge && useradd -r -g taskforge taskforge
+
+WORKDIR /app
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    libffi-dev \
+    libjpeg-dev \
+    libpng-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+USER taskforge
+
+CMD ["python", "-m", "app.worker.main"]

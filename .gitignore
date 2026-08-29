@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+Docs/
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local overrides
+.env.local
+.env.*.local
+analysis_report.md
+# Migration files (keep alembic/versions but ignore compiled pyc)
+alembic/__pycache__/
+alembic/versions/__pycache__/
