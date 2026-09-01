@@ -11,6 +11,7 @@ venv/
 *.egg-info/
 dist/
 build/
+node_modules/
 
 # Environment
 .env
@@ -27,6 +28,9 @@ build/
 .DS_Store
 Thumbs.db
 
+# Docker
+docker-compose.override.yml
+
 # Logs
 *.log
 
@@ -40,3 +44,7 @@ alembic/versions/__pycache__/
 # Docs and analysis (maintained separately)
 Docs/
 analysis_report.md
+
+# Database backups / SQL dumps
+*.sql
+*.sql.gz
