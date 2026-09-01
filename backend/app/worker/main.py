@@ -1,27 +1,32 @@
-"""Stub worker — consumes tasks from RabbitMQ and logs them.
+"""TaskForge worker — consumes tasks from RabbitMQ and processes them.
 
-This is a Phase 2 stub. In Phase 3, real task handlers (email, image, webhook)
-will be added here.
+Phase 3: real handlers, TaskAttempt lifecycle tracking, exponential backoff
+retries, and dead-letter queue routing.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import sys
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import aio_pika
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.core.rabbitmq import close_publisher, get_publisher
 from app.core.redis import close_redis
 from app.database import AsyncSessionLocal, engine
 from app.models.task import Task
+from app.models.task_attempt import TaskAttempt
+from app.worker.handlers import get_handler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,52 +37,162 @@ logger = logging.getLogger("worker")
 EXCHANGE_NAME = "task_main_exchange"
 TASK_TYPES = ["email_send", "image_resize", "webhook_delivery"]
 
+_RETRY_BASE_DELAY_SECONDS = 5
+_RETRY_MAX_DELAY_SECONDS = 60
 
-async def consume_task(task_id: str, task_type: str) -> None:
-    """Process a single task (stub — logs and marks succeeded)."""
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Task).where(Task.id == task_id)
-        )
-        task = result.scalar_one_or_none()
-        if not task:
-            logger.warning("Task %s not found in DB — skipping.", task_id)
-            return
-
-        if task.status in ("cancelled", "succeeded"):
-            logger.info("Task %s already terminal — skipping.", task_id)
-            return
-
-        logger.info(
-            "Processing task %s (type=%s, status=%s)",
-            task_id,
-            task_type,
-            task.status,
-        )
-
-        # Stub: simulate work with a short sleep
-        await asyncio.sleep(0.1)
-
-        task.status = "succeeded"
-        task.completed_at = datetime.now(timezone.utc)
-        await db.commit()
-        logger.info("Task %s marked succeeded.", task_id)
+TIMEOUT_MAP: dict[str, str] = {
+    "email_send": "task_email_timeout_seconds",
+    "image_resize": "task_image_resize_timeout_seconds",
+    "webhook_delivery": "task_webhook_timeout_seconds",
+}
 
 
-async def on_message(message: aio_pika.Message) -> None:
-    """Callback invoked for each consumed message."""
+def _get_timeout(task_type: str) -> int:
+    setting_name = TIMEOUT_MAP.get(task_type, "task_webhook_timeout_seconds")
+    return getattr(get_settings(), setting_name)
+
+
+def _calculate_retry_delay(attempt_count: int) -> int:
+    delay = _RETRY_BASE_DELAY_SECONDS * (2 ** (attempt_count - 1))
+    return min(delay, _RETRY_MAX_DELAY_SECONDS)
+
+
+async def create_attempt(db, task: Task) -> TaskAttempt:
+    attempt = TaskAttempt(
+        task_id=task.id,
+        attempt_number=task.attempt_count + 1,
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(attempt)
+    await db.flush()
+    return attempt
+
+
+async def _mark_success(db, task: Task, attempt: TaskAttempt) -> None:
+    task.status = "succeeded"
+    task.completed_at = datetime.now(timezone.utc)
+    attempt.outcome = "success"
+    attempt.finished_at = datetime.now(timezone.utc)
+    attempt.error_message = None
+    attempt.error_detail = None
+    await db.commit()
+
+
+async def _mark_failure(
+    db, task: Task, attempt: TaskAttempt, outcome: str, exc: Exception | None = None
+) -> None:
+    attempt.outcome = outcome
+    attempt.finished_at = datetime.now(timezone.utc)
+    if exc is not None:
+        attempt.error_message = str(exc)
+        attempt.error_detail = {"traceback": traceback.format_exc()}
+    await db.commit()
+
+
+async def consume_task(
+    db, task_id: str, task_type: str
+) -> tuple[str, int, int]:
+    """Process a single task.
+
+    Returns:
+        (final_status, attempt_count, max_attempts)
+    """
+    result = await db.execute(
+        select(Task)
+        .where(Task.id == task_id)
+        .options(selectinload(Task.attempts))
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        logger.warning("Task %s not found in DB — skipping.", task_id)
+        return "not_found", 0, 0
+
+    if task.status in ("cancelled", "succeeded"):
+        logger.info("Task %s already terminal — skipping.", task_id)
+        return task.status, task.attempt_count, task.max_attempts
+
+    task.status = "running"
+    task.started_at = datetime.now(timezone.utc)
+    task.attempt_count += 1
+    max_attempts = task.max_attempts
+    await db.flush()
+
+    attempt = await create_attempt(db, task)
+    await db.commit()
+
+    logger.info(
+        "Processing task %s (type=%s, attempt=%d, status=%s)",
+        task_id,
+        task_type,
+        attempt.attempt_number,
+        task.status,
+    )
+
+    handler = get_handler(task_type)
+    timeout = _get_timeout(task_type)
+
+    try:
+        await asyncio.wait_for(handler(task.payload), timeout=timeout)
+        await _mark_success(db, task, attempt)
+        return "succeeded", task.attempt_count, max_attempts
+
+    except asyncio.TimeoutError as exc:
+        await _mark_failure(db, task, attempt, "timeout", exc)
+        return "timeout", task.attempt_count, max_attempts
+
+    except (ValueError, OSError) as exc:
+        await _mark_failure(db, task, attempt, "failure", exc)
+        return "failed", task.attempt_count, max_attempts
+
+
+async def _publish_retry(publisher, task_id: str, task_type: str, attempt_count: int) -> None:
+    delay = _calculate_retry_delay(attempt_count)
+    body = task_id.encode("utf-8")
+    message = aio_pika.Message(
+        body,
+        content_type="text/plain",
+        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+        headers={
+            "x-task-type": task_type,
+            "x-task-id": task_id,
+        },
+        expiration=str(delay * 1000),
+    )
+    await publisher._exchange.publish(
+        message,
+        routing_key=f"tasks.{task_type}.retry",
+    )
+    logger.info(
+        "Published retry for task %s with %ds delay.",
+        task_id,
+        delay,
+    )
+
+
+async def on_message(message: aio_pika.Message, publisher) -> None:
     task_id = message.body.decode("utf-8")
     task_type = message.headers.get("x-task-type", "unknown")
     try:
-        await consume_task(task_id, task_type)
+        async with AsyncSessionLocal() as db:
+            final_status, attempt_count, max_attempts = await consume_task(
+                db, task_id, task_type
+            )
+
+        if final_status == "not_found":
+            await message.ack()
+            return
+
+        if attempt_count < max_attempts:
+            await _publish_retry(publisher, task_id, task_type, attempt_count)
+
         await message.ack()
+
     except Exception:
         logger.exception("Error processing task %s", task_id)
-        await message.nack(requeue=True)
+        await message.ack()
 
 
 async def subscribe_queues(publisher) -> None:
-    """Declare queues and bind them to the exchange for each task type."""
     channel = publisher._channel
     if channel is None:
         raise RuntimeError("RabbitMQ channel not available.")
@@ -85,6 +200,11 @@ async def subscribe_queues(publisher) -> None:
     exchange = publisher._exchange
     if exchange is None:
         raise RuntimeError("RabbitMQ exchange not available.")
+
+    async def _make_handler(pub):
+        async def handler(msg):
+            await on_message(msg, pub)
+        return handler
 
     for task_type in TASK_TYPES:
         main_queue_name = f"tasks.{task_type}"
@@ -97,7 +217,7 @@ async def subscribe_queues(publisher) -> None:
             },
         )
         await queue.bind(exchange, routing_key=task_type)
-        await queue.consume(on_message)
+        await queue.consume(_make_handler(publisher))
         logger.info(
             "Subscribed to queue '%s' (routing key: %s).",
             main_queue_name,
@@ -109,7 +229,6 @@ async def subscribe_queues(publisher) -> None:
             retry_queue_name,
             durable=True,
             arguments={
-                "x-message-ttl": 5000,
                 "x-dead-letter-exchange": EXCHANGE_NAME,
                 "x-dead-letter-routing-key": main_queue_name,
             },
@@ -117,7 +236,7 @@ async def subscribe_queues(publisher) -> None:
         await retry_queue.bind(
             exchange, routing_key=f"tasks.{task_type}.retry"
         )
-        await retry_queue.consume(on_message)
+        await retry_queue.consume(_make_handler(publisher))
         logger.info("Subscribed to retry queue '%s'.", retry_queue_name)
 
         dlq_queue_name = f"tasks.{task_type}.dlq"
@@ -130,7 +249,6 @@ async def subscribe_queues(publisher) -> None:
 
 
 async def main() -> None:
-    """Worker entrypoint."""
     logger.info("Starting TaskForge worker...")
 
     publisher = await get_publisher()
