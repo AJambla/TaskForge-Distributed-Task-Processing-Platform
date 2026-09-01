@@ -1,0 +1,85 @@
+# TaskForge — Load Testing Overlay
+#
+# Usage:
+#   # Start the stack with 50 workers (default)
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d
+#
+#   # Start with custom worker count
+#   WORKER_REPLICAS=25 docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d
+#
+#   # Scale workers after start
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml up -d --scale worker=50
+#
+#   # Run k6 load test
+#   docker compose -f docker-compose.yml -f docker-compose.loadtest.yml run --rm k6
+#
+# This overlay:
+# 1. Increases PostgreSQL max_connections to accommodate 50+ workers
+# 2. Sets APP_ENV=staging, relaxes rate limits for load testing
+# 3. Adds a k6 service for load test execution
+
+services:
+  postgres:
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=${POSTGRES_MAX_CONNECTIONS:-500}"
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+
+  api:
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      APP_ENV: staging
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      RATE_LIMIT_TASK_SUBMISSION_PER_MINUTE: ${RATE_LIMIT_TASK_SUBMISSION_PER_MINUTE:-600}
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-200}
+
+  worker:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      APP_ENV: staging
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+
+  scheduler:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      APP_ENV: staging
+
+  prometheus:
+    ports:
+      - "9090:9090"
+
+  grafana:
+    ports:
+      - "3000:3000"
+
+  k6:
+    image: grafana/k6:latest
+    restart: "no"
+    volumes:
+      - ./load-tests/k6:/mnt/k6
+    environment:
+      - API_URL=${API_URL:-http://api:8000}
+    command: ["run", "/mnt/k6/taskforge.js"]
+    depends_on:
+      - api
+      - worker
