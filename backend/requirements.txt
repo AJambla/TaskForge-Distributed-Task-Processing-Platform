@@ -33,6 +33,7 @@ Pillow==11.0.0
 
 # --- Scheduling ---
 apscheduler==3.10.4
+croniter==3.0.1
 
 # --- Observability ---
 prometheus-fastapi-instrumentator==7.0.0

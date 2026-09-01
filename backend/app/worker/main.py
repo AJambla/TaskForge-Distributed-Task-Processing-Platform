@@ -32,6 +32,12 @@ from app.models.task import Task
 from app.models.task_attempt import TaskAttempt
 from app.models.worker_registration import WorkerRegistration
 from app.worker.handlers import get_handler
+from app.worker.metrics import (
+    start_metrics_server,
+    task_attempts_total,
+    task_duration_seconds,
+    tasks_processed_total,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -186,6 +192,7 @@ async def consume_task(
     await db.flush()
 
     attempt = await create_attempt(db, task, worker_id=worker_id)
+    task_attempts_total.inc()
     await db.commit()
 
     logger.info(
@@ -201,16 +208,26 @@ async def consume_task(
     timeout = _get_timeout(task_type)
 
     try:
+        start = asyncio.get_event_loop().time()
         await asyncio.wait_for(handler(task.payload), timeout=timeout)
+        elapsed = asyncio.get_event_loop().time() - start
+        task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_success(db, task, attempt, worker_id=worker_id)
+        tasks_processed_total.labels(outcome="success", task_type=task_type).inc()
         return "succeeded", task.attempt_count, max_attempts
 
     except asyncio.TimeoutError as exc:
+        elapsed = asyncio.get_event_loop().time() - start
+        task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_failure(db, task, attempt, "timeout", exc, worker_id=worker_id)
+        tasks_processed_total.labels(outcome="timeout", task_type=task_type).inc()
         return "timeout", task.attempt_count, max_attempts
 
     except (ValueError, OSError) as exc:
+        elapsed = asyncio.get_event_loop().time() - start
+        task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_failure(db, task, attempt, "failure", exc, worker_id=worker_id)
+        tasks_processed_total.labels(outcome="failure", task_type=task_type).inc()
         return "failed", task.attempt_count, max_attempts
 
 
@@ -253,6 +270,22 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
 
         if attempt_count < max_attempts:
             await _publish_retry(publisher, task_id, task_type, attempt_count)
+        elif attempt_count >= max_attempts:
+            async with AsyncSessionLocal() as db_retry:
+                result = await db_retry.execute(
+                    select(Task).where(Task.id == task_id)
+                )
+                dead_task = result.scalar_one_or_none()
+                if dead_task and dead_task.status != "succeeded":
+                    dead_task.status = "dead_letter"
+                    dead_task.completed_at = datetime.now(timezone.utc)
+                    await db_retry.commit()
+                    logger.info(
+                        "Task %s moved to dead_letter after %d/%d attempts.",
+                        task_id,
+                        attempt_count,
+                        max_attempts,
+                    )
 
         await message.ack()
 
@@ -328,6 +361,9 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
 
 
 async def main() -> None:
+    _metrics_port = int(os.environ.get("PORT_METRICS", 9001))
+    start_metrics_server(_metrics_port)
+
     logger.info("Starting TaskForge worker (hostname=%s)...", _WORKER_HOSTNAME)
 
     publisher = await get_publisher()

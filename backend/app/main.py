@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
@@ -71,6 +72,13 @@ app.add_middleware(
 
 # Exception handlers
 register_exception_handlers(app)
+
+# Prometheus metrics
+Instrumentator(
+    should_group_status_codes=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/healthz", "/api/v1/metrics"],
+).instrument(app)
 
 # Routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])

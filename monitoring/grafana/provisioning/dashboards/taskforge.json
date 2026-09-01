@@ -1,0 +1,185 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Task Submission Rate",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"taskforge-api\", handler=~\"/api/v1/tasks.*\"}[5m])) by (handler)",
+          "legendFormat": "{{handler}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "requests/s", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    },
+    {
+      "title": "Task Failure Rate",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(tasks_processed_total{outcome=\"failure\"}[5m])) by (task_type)",
+          "legendFormat": "{{task_type}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "failures/s", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    },
+    {
+      "title": "Task Processing Duration (p95)",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(task_duration_seconds_bucket[5m])) by (le, task_type))",
+          "legendFormat": "{{task_type}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "seconds", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    },
+    {
+      "title": "Queue Depth (messages ready)",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rabbitmq_queue_messages_ready",
+          "legendFormat": "{{queue}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "messages", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    },
+    {
+      "title": "Tasks Processed Total",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(tasks_processed_total[5m])) by (outcome, task_type)",
+          "legendFormat": "{{outcome}} / {{task_type}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "tasks/s", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    },
+    {
+      "title": "API Request Duration (p95)",
+      "type": "graph",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"taskforge-api\"}[5m])) by (le, handler))",
+          "legendFormat": "{{handler}}",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "seconds", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    },
+    {
+      "title": "Active Requests In-Progress",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 24},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "http_requests_inprogress",
+          "legendFormat": "in-progress",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 50},
+              {"color": "red", "value": 100}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "API Requests In-Progress"
+    },
+    {
+      "title": "Worker Task Attempts",
+      "type": "graph",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 24},
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(task_attempts_total[5m]))",
+          "legendFormat": "attempts/s",
+          "refId": "A"
+        }
+      ],
+      "yaxes": [
+        {"label": "attempts/s", "format": "short"},
+        {"format": "short", "label": null, "logBase": 1, "max": null, "min": null, "show": false}
+      ],
+      "xaxis": {"mode": "time", "name": "Time", "show": true}
+    }
+  ],
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": ["taskforge"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "title": "TaskForge",
+  "uid": "taskforge",
+  "version": 1
+}
