@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
-from app.routers import api_keys, auth
+from app.routers import api_keys, auth, tasks
 
 settings = get_settings()
 
@@ -39,6 +39,7 @@ register_exception_handlers(app)
 # Routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["api-keys"])
+app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 
 @app.get("/healthz", tags=["system"])
 async def healthz():
