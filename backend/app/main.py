@@ -48,9 +48,7 @@ async def _check_rabbitmq() -> tuple[bool, str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     yield
-    # Shutdown
     from app.database import engine
     await engine.dispose()
 
@@ -73,17 +71,24 @@ app.add_middleware(
 # Exception handlers
 register_exception_handlers(app)
 
-# Prometheus metrics
-Instrumentator(
-    should_group_status_codes=True,
-    should_instrument_requests_inprogress=True,
-    excluded_handlers=["/healthz", "/api/v1/metrics"],
-).instrument(app)
+# Custom Prometheus metrics endpoint for Prometheus scrape config
+@app.get("/api/v1/metrics")
+async def metrics_endpoint():
+    from prometheus_client import generate_latest
+    from starlette.responses import Response
+    return Response(generate_latest(), media_type="text/plain; charset=utf-8")
 
 # Routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["api-keys"])
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
+
+# Prometheus instrumentator — exclude healthz and the custom metrics endpoint
+Instrumentator(
+    should_group_status_codes=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=["/healthz", "/api/v1/metrics"],
+).instrument(app)
 
 
 @app.get("/healthz", tags=["system"])
