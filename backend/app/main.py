@@ -5,9 +5,45 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
+from app.core.rabbitmq import get_publisher
+from app.core.redis import get_redis
+from app.database import engine
 from app.routers import api_keys, auth, tasks
 
 settings = get_settings()
+
+
+async def _check_db() -> tuple[bool, str]:
+    try:
+        from sqlalchemy import text
+        from sqlalchemy.exc import SQLAlchemyError
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True, "ok"
+    except SQLAlchemyError as exc:
+        return False, str(exc)
+
+
+async def _check_redis() -> tuple[bool, str]:
+    try:
+        import redis.exceptions
+        client = await get_redis()
+        await client.ping()
+        return True, "ok"
+    except (redis.exceptions.ConnectionError, OSError) as exc:
+        return False, str(exc)
+
+
+async def _check_rabbitmq() -> tuple[bool, str]:
+    try:
+        import aio_pika.exceptions
+        publisher = await get_publisher()
+        if publisher._connection is None or publisher._connection.is_closed:
+            return False, "connection is closed"
+        return True, "ok"
+    except (aio_pika.exceptions.AmqpError, OSError) as exc:
+        return False, str(exc)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,6 +77,22 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["api-keys"])
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 
+
 @app.get("/healthz", tags=["system"])
 async def healthz():
-    return {"status": "ok"}
+    db_ok, db_msg = await _check_db()
+    redis_ok, redis_msg = await _check_redis()
+    rabbitmq_ok, rabbitmq_msg = await _check_rabbitmq()
+
+    all_ok = db_ok and redis_ok and rabbitmq_ok
+
+    components = {
+        "database": {"status": "ok" if db_ok else "error", "detail": db_msg},
+        "redis": {"status": "ok" if redis_ok else "error", "detail": redis_msg},
+        "rabbitmq": {"status": "ok" if rabbitmq_ok else "error", "detail": rabbitmq_msg},
+    }
+
+    if all_ok:
+        return {"status": "ok", "components": components}
+
+    return {"status": "error", "components": components}, 503
