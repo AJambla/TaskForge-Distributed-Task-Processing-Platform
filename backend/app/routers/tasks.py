@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
 from app.core.deps import CurrentUser, DBSession
-from app.core.rabbitmq import publish_task
+from app.core.rabbitmq import check_backpressure, publish_task
 from app.core.rate_limit import RateLimiter
 from app.core.redis import check_idempotency, set_idempotency_task_id
 from app.models.task import Task
@@ -105,6 +105,7 @@ async def create_task(
     # Publish to RabbitMQ — if this fails, mark task as failed to avoid
     # a dangling 'queued' state with no message.
     try:
+        await check_backpressure()
         await publish_task(str(task.id), body.task_type.value)
     except Exception:
         logger.exception("Failed to publish task %s to RabbitMQ", task.id)
@@ -356,6 +357,7 @@ async def retry_task(
 
     # Re-publish to RabbitMQ
     try:
+        await check_backpressure()
         await publish_task(str(task.id), task.task_type)
     except Exception:
         logger.exception("Failed to re-publish retried task %s", task.id)

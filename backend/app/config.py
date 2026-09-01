@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # RabbitMQ
     rabbitmq_url: str = "amqp://taskforge:taskforge_dev_secret@localhost:5672/taskforge"
+    rabbitmq_vhost: str = "taskforge"
+    rabbitmq_management_url: str = "http://taskforge:taskforge_dev_secret@rabbitmq:15672"
 
     # JWT
     jwt_secret_key: str = "change_me_generate_a_real_secret_here"
@@ -60,6 +62,15 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from: str = "noreply@taskforge.dev"
+
+    # Backpressure
+    backpressure_enabled: bool = False
+    backpressure_queue_depth_threshold: int = 500
+
+    # Sandbox
+    sandbox_enabled: bool = True
+    sandbox_cpu_limit_seconds: float = 30.0
+    sandbox_memory_limit_mb: int = 256
 
 
 @lru_cache

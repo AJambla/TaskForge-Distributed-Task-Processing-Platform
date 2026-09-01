@@ -170,10 +170,27 @@ async def refresh(
         )
 
     access_token, access_expires = create_access_token(user.id, user.role)
+    raw_refresh, refresh_hash, refresh_expires = create_refresh_token(user.id)
+
+    db.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=refresh_hash,
+            expires_at=refresh_expires,
+        )
+    )
+    await db.commit()
+    refresh_record.revoked = True
+    await db.commit()
+
     expires_in = int(
         (access_expires - datetime.now(timezone.utc)).total_seconds()
     )
-    return RefreshResponse(access_token=access_token, expires_in=expires_in)
+    return RefreshResponse(
+        access_token=access_token,
+        refresh_token=raw_refresh,
+        expires_in=expires_in,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

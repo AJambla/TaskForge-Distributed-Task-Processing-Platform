@@ -1,0 +1,31 @@
+groups:
+  - name: taskforge
+    rules:
+      - alert: HighQueueDepth
+        expr: sum(rabbitmq_queue_messages) by (queue) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High RabbitMQ queue depth on {{ $labels.queue }}"
+          description: "Queue {{ $labels.queue }} has >1000 messages for 5 minutes."
+
+      - alert: HighTaskFailureRate
+        expr: |
+          sum(rate(tasks_processed_total{outcome="failure"}[5m]))
+          / sum(rate(tasks_processed_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High task failure rate"
+          description: "Failure rate exceeds 20% over the last 5 minutes."
+
+      - alert: ZeroOnlineWorkers
+        expr: sum(workers_online_total) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No online workers"
+          description: "All workers have been offline for more than 5 minutes."
