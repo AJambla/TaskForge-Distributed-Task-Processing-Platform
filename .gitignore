@@ -8,17 +8,21 @@ htmlcov/
 .tox/
 .venv/
 venv/
-.env
 *.egg-info/
 dist/
 build/
+
+# Environment
+.env
+.env.local
+.env.*.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-Docs/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -26,10 +30,13 @@ Thumbs.db
 # Logs
 *.log
 
-# Local overrides
-.env.local
-.env.*.local
-analysis_report.md
-# Migration files (keep alembic/versions but ignore compiled pyc)
+# Migration compiled files
 alembic/__pycache__/
 alembic/versions/__pycache__/
+
+# AI/kilo config (local tooling)
+.kilo/
+
+# Docs and analysis (maintained separately)
+Docs/
+analysis_report.md
