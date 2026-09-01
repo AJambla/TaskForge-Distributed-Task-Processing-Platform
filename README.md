@@ -124,7 +124,7 @@ stateDiagram-v2
 | **Rate limiting** | Redis fixed-window counters per API key / per-user (60/min submission, 20/min auth) |
 | **Least privilege** | Workers run as unprivileged `taskforge` user; Postgres/Redis/RabbitMQ not exposed on public ports in production |
 
-See [`Docs/SECURITY.md`](Docs/SECURITY.md) for the full threat model and checklist.
+
 
 ## Observability
 
@@ -191,7 +191,7 @@ Throughput results are measured and reported in the load-test output — no assu
 | **Load Testing** | k6 |
 | **Infrastructure** | Docker Compose (local) · Managed PaaS (prod) · GitHub Actions (CI/CD) |
 
-See [`Docs/TECHSTACK.md`](Docs/TECHSTACK.md) for the full rationale, including alternatives considered and rejected.
+
 
 ## Project Structure
 
@@ -278,7 +278,6 @@ cd frontend && npm install && npm run dev
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3000 (admin/admin) |
 
-See [`Docs/DEPLOYMENT.md`](Docs/DEPLOYMENT.md) for production deployment instructions.
 
 ## API Quick Start
 
@@ -314,22 +313,9 @@ curl -X POST http://localhost:8000/api/v1/tasks \
   }'
 ```
 
-Full endpoint reference: [`Docs/API.md`](Docs/API.md).
 
-## Documentation
 
-| Doc | Contents |
-|---|---|
-| [`Docs/PRD.md`](Docs/PRD.md) | Product requirements, goals, non-goals, MVP scope |
-| [`Docs/FEATURES.md`](Docs/FEATURES.md) | Full feature spec by priority and complexity |
-| [`Docs/ARCHITECTURE.md`](Docs/ARCHITECTURE.md) | System design, task lifecycle, failure scenarios, scaling |
-| [`Docs/DATABASE.md`](Docs/DATABASE.md) | Schema, indexes, Redis structures, queue metadata |
-| [`Docs/API.md`](Docs/API.md) | REST API endpoint reference |
-| [`Docs/SECURITY.md`](Docs/SECURITY.md) | Threat model, security checklist |
-| [`Docs/TECHSTACK.md`](Docs/TECHSTACK.md) | Technology choices and rationale |
-| [`Docs/DEPLOYMENT.md`](Docs/DEPLOYMENT.md) | Local setup, Docker, production, CI/CD, monitoring |
 
-## What's Not Yet Built
 
 The project targets **Phases 1–7**. Phase 8 (next) includes:
 
