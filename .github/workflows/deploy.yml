@@ -1,0 +1,49 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt
+
+      - name: Run Alembic migrations
+        run: |
+          docker compose run --rm \
+            -e DATABASE_URL="postgresql+asyncpg://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:5432/${{ secrets.DB_NAME }}" \
+            api alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:5432/${{ secrets.DB_NAME }}
+
+      - name: Deploy to PaaS
+        run: |
+          # TODO: Replace with actual PaaS CLI command (Render / Fly.io / Railway)
+          # Example for Render:
+          # renderctl deploy --service taskforge-api --image taskforge-api:${{ github.sha }}
+          # Example for Fly.io:
+          # fly deploy --image taskforge-api:${{ github.sha }}
+          # Example for Railway:
+          # railway up --service taskforge-api
+          echo "Deploy placeholder — configure your PaaS CLI in this step."
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+
+# Required GitHub secrets:
+#   DB_USER       — PostgreSQL username for production
+#   DB_PASSWORD   — PostgreSQL password for production
+#   DB_HOST       — PostgreSQL hostname for production
+#   DB_NAME       — PostgreSQL database name for production
+#   PaaS-specific tokens (e.g., RENDER_API_TOKEN, FLY_API_TOKEN, RAILWAY_TOKEN)
