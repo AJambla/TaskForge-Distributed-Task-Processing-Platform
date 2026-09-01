@@ -37,6 +37,7 @@ from app.worker.metrics import (
     task_attempts_total,
     task_duration_seconds,
     tasks_processed_total,
+    workers_online_total,
 )
 
 logging.basicConfig(
@@ -66,6 +67,64 @@ _WORKER_HOSTNAME: str = os.environ.get("WORKER_HOSTNAME", socket.gethostname())
 def _get_timeout(task_type: str) -> int:
     setting_name = _TIMEOUT_MAP.get(task_type, "task_webhook_timeout_seconds")
     return getattr(_SETTINGS, setting_name)
+
+
+def _run_handler_in_sandbox(handler, payload) -> object:
+    """Run a handler in a child process with resource limits (POSIX only).
+
+    On Windows, resource.setrlimit is unavailable — runs the handler directly
+    and relies on the asyncio timeout wrapper instead.
+    """
+    if sys.platform == "win32" or not _SETTINGS.sandbox_enabled:
+        return handler(payload)
+
+    import multiprocessing
+
+    def _worker(handler_fn, payload_data, result_queue):
+        import resource
+
+        limit_bytes = _SETTINGS.sandbox_memory_limit_mb * 1024 * 1024
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+        except (OSError, resource.error):
+            logger.warning(
+                "Failed to set memory limit — continuing without RSS cap."
+            )
+        try:
+            resource.setrlimit(
+                resource.RLIMIT_CPU,
+                (int(_SETTINGS.sandbox_cpu_limit_seconds), int(_SETTINGS.sandbox_cpu_limit_seconds)),
+            )
+        except (OSError, resource.error):
+            logger.warning(
+                "Failed to set CPU limit — continuing without CPU cap."
+            )
+        try:
+            result = handler_fn(payload_data)
+            result_queue.put(("ok", result))
+        except Exception as exc:
+            result_queue.put(("error", exc))
+
+    result_queue: multiprocessing.Queue = multiprocessing.Queue()
+    process = multiprocessing.Process(
+        target=_worker,
+        args=(handler, payload, result_queue),
+        daemon=True,
+    )
+    process.start()
+    process.join(timeout=int(_SETTINGS.sandbox_cpu_limit_seconds) + 5)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=2)
+        raise asyncio.TimeoutError(
+            f"Handler exceeded sandbox CPU limit of {_SETTINGS.sandbox_cpu_limit_seconds}s"
+        )
+
+    status, result = result_queue.get()
+    if status == "error":
+        raise result
+    return result
 
 
 def _calculate_retry_delay(attempt_count: int) -> int:
@@ -138,6 +197,7 @@ async def _register_worker(db) -> WorkerRegistration:
     await db.flush()
     await db.refresh(worker)
     logger.info("Worker registered: id=%s hostname=%s", worker.id, worker.hostname)
+    workers_online_total.set(1)
     return worker
 
 
@@ -161,6 +221,7 @@ async def _set_worker_offline(db, worker_id) -> None:
     )
     await db.commit()
     logger.info("Worker marked offline: id=%s", worker_id)
+    workers_online_total.set(0)
 
 
 async def consume_task(
@@ -209,7 +270,15 @@ async def consume_task(
 
     try:
         start = asyncio.get_event_loop().time()
-        await asyncio.wait_for(handler(task.payload), timeout=timeout)
+        if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
+            result = await asyncio.wait_for(
+                asyncio.get_event_loop().run_in_executor(
+                    None, _run_handler_in_sandbox, handler, task.payload
+                ),
+                timeout=timeout,
+            )
+        else:
+            result = await asyncio.wait_for(handler(task.payload), timeout=timeout)
         elapsed = asyncio.get_event_loop().time() - start
         task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_success(db, task, attempt, worker_id=worker_id)
@@ -223,7 +292,7 @@ async def consume_task(
         tasks_processed_total.labels(outcome="timeout", task_type=task_type).inc()
         return "timeout", task.attempt_count, max_attempts
 
-    except (ValueError, OSError) as exc:
+    except Exception as exc:
         elapsed = asyncio.get_event_loop().time() - start
         task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_failure(db, task, attempt, "failure", exc, worker_id=worker_id)

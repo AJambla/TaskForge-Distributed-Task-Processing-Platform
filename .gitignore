@@ -41,7 +41,6 @@ alembic/versions/__pycache__/
 # AI/kilo config (local tooling)
 .kilo/
 analysis_report.md
-Docs/
 
 # Load test outputs
 load-tests/results/
@@ -49,3 +48,5 @@ load-tests/results/
 # Database backups / SQL dumps
 *.sql
 *.sql.gz
+Docs/
+README.md

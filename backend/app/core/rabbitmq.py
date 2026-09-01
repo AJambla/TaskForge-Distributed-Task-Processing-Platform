@@ -105,3 +105,61 @@ async def publish_task(task_id: str, task_type: str) -> None:
     """Convenience function to publish a task message."""
     publisher = await get_publisher()
     await publisher.publish(task_id, task_type)
+
+
+async def get_queue_depths() -> dict[str, int]:
+    """Return {queue_name: message_count} for all taskforge queues.
+
+    Queries the RabbitMQ management API. Returns empty dict on failure.
+    """
+    settings = get_settings()
+    management_url = settings.rabbitmq_management_url
+    vhost = settings.rabbitmq_vhost
+
+    import httpx
+
+    url = f"{management_url}/api/queues/{vhost}"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                logger.warning(
+                    "RabbitMQ management API returned %d — returning empty depths.",
+                    resp.status_code,
+                )
+                return {}
+            queues = resp.json()
+            return {q["name"]: q.get("messages", 0) for q in queues}
+    except Exception:
+        logger.warning("Failed to query RabbitMQ management API for queue depths.", exc_info=True)
+        return {}
+
+
+async def check_backpressure() -> None:
+    """Raise HTTPException(status=429) if queue depth exceeds threshold.
+
+    Fails open (allows submission) if the management API is unreachable.
+    """
+    settings = get_settings()
+    if not settings.backpressure_enabled:
+        return
+
+    depths = await get_queue_depths()
+    total = sum(depths.values())
+    if total > settings.backpressure_queue_depth_threshold:
+        logger.warning(
+            "Backpressure triggered: total queue depth %d exceeds threshold %d.",
+            total,
+            settings.backpressure_queue_depth_threshold,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": {
+                    "code": "QUEUE_FULL",
+                    "message": "System is backpressuring. Please retry.",
+                    "field": None,
+                }
+            },
+            headers={"Retry-After": "30"},
+        )

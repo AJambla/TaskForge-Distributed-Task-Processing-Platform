@@ -9,7 +9,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-from prometheus_client import Counter, Histogram, generate_latest, REGISTRY
+from prometheus_client import Counter, Gauge, Histogram, generate_latest, REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,12 @@ task_attempts_total = Counter(
 worker_heartbeat_missed_total = Counter(
     "worker_heartbeat_missed_total",
     "Total number of missed heartbeats",
+    registry=REGISTRY,
+)
+
+workers_online_total = Gauge(
+    "workers_online_total",
+    "Number of workers currently online",
     registry=REGISTRY,
 )
 
