@@ -7,12 +7,15 @@ Per API.md:
 - POST /api/v1/auth/logout — 204, revokes ALL of the user's refresh tokens
 """
 from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
+from app.config import get_settings
 from app.core.deps import CurrentUser, DBSession
+from app.core.rate_limit import RateLimiter
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -42,6 +45,7 @@ router = APIRouter()
 async def register(
     body: RegisterRequest,
     db: DBSession,
+    rate_limit: Annotated[None, Depends(RateLimiter(limit=get_settings().rate_limit_auth_per_minute))],
 ) -> RegisterResponse:
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none() is not None:
@@ -83,6 +87,7 @@ async def register(
 async def login(
     body: LoginRequest,
     db: DBSession,
+    rate_limit: Annotated[None, Depends(RateLimiter(limit=get_settings().rate_limit_auth_per_minute))],
 ) -> LoginResponse:
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()

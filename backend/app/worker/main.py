@@ -2,11 +2,15 @@
 
 Phase 3: real handlers, TaskAttempt lifecycle tracking, exponential backoff
 retries, and dead-letter queue routing.
+Phase 4: worker registration, heartbeat loop, and graceful shutdown.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import signal
+import socket
 import sys
 import traceback
 from datetime import datetime, timezone
@@ -17,7 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import aio_pika
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
@@ -26,6 +30,7 @@ from app.core.redis import close_redis
 from app.database import AsyncSessionLocal, engine
 from app.models.task import Task
 from app.models.task_attempt import TaskAttempt
+from app.models.worker_registration import WorkerRegistration
 from app.worker.handlers import get_handler
 
 logging.basicConfig(
@@ -40,16 +45,21 @@ TASK_TYPES = ["email_send", "image_resize", "webhook_delivery"]
 _RETRY_BASE_DELAY_SECONDS = 5
 _RETRY_MAX_DELAY_SECONDS = 60
 
-TIMEOUT_MAP: dict[str, str] = {
+_TIMEOUT_MAP: dict[str, str] = {
     "email_send": "task_email_timeout_seconds",
     "image_resize": "task_image_resize_timeout_seconds",
     "webhook_delivery": "task_webhook_timeout_seconds",
 }
 
+_HEARTBEAT_INTERVAL_SECONDS = 15
+
+_SETTINGS = get_settings()
+_WORKER_HOSTNAME: str = os.environ.get("WORKER_HOSTNAME", socket.gethostname())
+
 
 def _get_timeout(task_type: str) -> int:
-    setting_name = TIMEOUT_MAP.get(task_type, "task_webhook_timeout_seconds")
-    return getattr(get_settings(), setting_name)
+    setting_name = _TIMEOUT_MAP.get(task_type, "task_webhook_timeout_seconds")
+    return getattr(_SETTINGS, setting_name)
 
 
 def _calculate_retry_delay(attempt_count: int) -> int:
@@ -57,10 +67,11 @@ def _calculate_retry_delay(attempt_count: int) -> int:
     return min(delay, _RETRY_MAX_DELAY_SECONDS)
 
 
-async def create_attempt(db, task: Task) -> TaskAttempt:
+async def create_attempt(db, task: Task, worker_id=None) -> TaskAttempt:
     attempt = TaskAttempt(
         task_id=task.id,
         attempt_number=task.attempt_count + 1,
+        worker_id=worker_id,
         started_at=datetime.now(timezone.utc),
     )
     db.add(attempt)
@@ -68,7 +79,7 @@ async def create_attempt(db, task: Task) -> TaskAttempt:
     return attempt
 
 
-async def _mark_success(db, task: Task, attempt: TaskAttempt) -> None:
+async def _mark_success(db, task: Task, attempt: TaskAttempt, worker_id=None) -> None:
     task.status = "succeeded"
     task.completed_at = datetime.now(timezone.utc)
     attempt.outcome = "success"
@@ -76,10 +87,11 @@ async def _mark_success(db, task: Task, attempt: TaskAttempt) -> None:
     attempt.error_message = None
     attempt.error_detail = None
     await db.commit()
+    await _update_worker_stats(db, worker_id, tasks_processed=1)
 
 
 async def _mark_failure(
-    db, task: Task, attempt: TaskAttempt, outcome: str, exc: Exception | None = None
+    db, task: Task, attempt: TaskAttempt, outcome: str, exc: Exception | None = None, worker_id=None
 ) -> None:
     attempt.outcome = outcome
     attempt.finished_at = datetime.now(timezone.utc)
@@ -87,10 +99,66 @@ async def _mark_failure(
         attempt.error_message = str(exc)
         attempt.error_detail = {"traceback": traceback.format_exc()}
     await db.commit()
+    if outcome == "failure":
+        await _update_worker_stats(db, worker_id, tasks_failed=1)
+
+
+async def _update_worker_stats(
+    db,
+    worker_id,
+    tasks_processed: int = 0,
+    tasks_failed: int = 0,
+) -> None:
+    if worker_id is None:
+        return
+    await db.execute(
+        update(WorkerRegistration)
+        .where(WorkerRegistration.id == worker_id)
+        .values(
+            tasks_processed=WorkerRegistration.tasks_processed + tasks_processed,
+            tasks_failed=WorkerRegistration.tasks_failed + tasks_failed,
+        )
+    )
+    await db.commit()
+
+
+async def _register_worker(db) -> WorkerRegistration:
+    worker = WorkerRegistration(
+        hostname=_WORKER_HOSTNAME,
+        status="online",
+        concurrency_limit=_SETTINGS.worker_concurrency,
+    )
+    db.add(worker)
+    await db.flush()
+    await db.refresh(worker)
+    logger.info("Worker registered: id=%s hostname=%s", worker.id, worker.hostname)
+    return worker
+
+
+async def _update_heartbeat(db, worker: WorkerRegistration) -> None:
+    await db.execute(
+        update(WorkerRegistration)
+        .where(WorkerRegistration.id == worker.id)
+        .values(
+            last_heartbeat_at=datetime.now(timezone.utc),
+            current_task_count=WorkerRegistration.current_task_count,
+        )
+    )
+    await db.commit()
+
+
+async def _set_worker_offline(db, worker_id) -> None:
+    await db.execute(
+        update(WorkerRegistration)
+        .where(WorkerRegistration.id == worker_id)
+        .values(status="offline")
+    )
+    await db.commit()
+    logger.info("Worker marked offline: id=%s", worker_id)
 
 
 async def consume_task(
-    db, task_id: str, task_type: str
+    db, task_id: str, task_type: str, worker_id=None
 ) -> tuple[str, int, int]:
     """Process a single task.
 
@@ -117,15 +185,16 @@ async def consume_task(
     max_attempts = task.max_attempts
     await db.flush()
 
-    attempt = await create_attempt(db, task)
+    attempt = await create_attempt(db, task, worker_id=worker_id)
     await db.commit()
 
     logger.info(
-        "Processing task %s (type=%s, attempt=%d, status=%s)",
+        "Processing task %s (type=%s, attempt=%d, status=%s, worker=%s)",
         task_id,
         task_type,
         attempt.attempt_number,
         task.status,
+        worker_id,
     )
 
     handler = get_handler(task_type)
@@ -133,15 +202,15 @@ async def consume_task(
 
     try:
         await asyncio.wait_for(handler(task.payload), timeout=timeout)
-        await _mark_success(db, task, attempt)
+        await _mark_success(db, task, attempt, worker_id=worker_id)
         return "succeeded", task.attempt_count, max_attempts
 
     except asyncio.TimeoutError as exc:
-        await _mark_failure(db, task, attempt, "timeout", exc)
+        await _mark_failure(db, task, attempt, "timeout", exc, worker_id=worker_id)
         return "timeout", task.attempt_count, max_attempts
 
     except (ValueError, OSError) as exc:
-        await _mark_failure(db, task, attempt, "failure", exc)
+        await _mark_failure(db, task, attempt, "failure", exc, worker_id=worker_id)
         return "failed", task.attempt_count, max_attempts
 
 
@@ -169,13 +238,13 @@ async def _publish_retry(publisher, task_id: str, task_type: str, attempt_count:
     )
 
 
-async def on_message(message: aio_pika.Message, publisher) -> None:
+async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> None:
     task_id = message.body.decode("utf-8")
     task_type = message.headers.get("x-task-type", "unknown")
     try:
         async with AsyncSessionLocal() as db:
             final_status, attempt_count, max_attempts = await consume_task(
-                db, task_id, task_type
+                db, task_id, task_type, worker_id=worker_id
             )
 
         if final_status == "not_found":
@@ -192,7 +261,17 @@ async def on_message(message: aio_pika.Message, publisher) -> None:
         await message.ack()
 
 
-async def subscribe_queues(publisher) -> None:
+async def _heartbeat_loop(worker: WorkerRegistration) -> None:
+    while True:
+        await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
+        try:
+            async with AsyncSessionLocal() as db:
+                await _update_heartbeat(db, worker)
+        except Exception:
+            logger.exception("Heartbeat update failed for worker %s", worker.id)
+
+
+async def subscribe_queues(publisher, worker_id=None) -> None:
     channel = publisher._channel
     if channel is None:
         raise RuntimeError("RabbitMQ channel not available.")
@@ -203,7 +282,7 @@ async def subscribe_queues(publisher) -> None:
 
     async def _make_handler(pub):
         async def handler(msg):
-            await on_message(msg, pub)
+            await on_message(msg, pub, worker_id=worker_id)
         return handler
 
     for task_type in TASK_TYPES:
@@ -249,17 +328,50 @@ async def subscribe_queues(publisher) -> None:
 
 
 async def main() -> None:
-    logger.info("Starting TaskForge worker...")
+    logger.info("Starting TaskForge worker (hostname=%s)...", _WORKER_HOSTNAME)
 
     publisher = await get_publisher()
+    worker = None
+
     try:
-        await subscribe_queues(publisher)
+        async with AsyncSessionLocal() as db:
+            worker = await _register_worker(db)
+
+        heartbeat_task = asyncio.create_task(_heartbeat_loop(worker))
+
+        await subscribe_queues(publisher, worker_id=str(worker.id))
         logger.info("Worker ready. Waiting for messages...")
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Shutting down worker...")
+
+        loop = asyncio.get_running_loop()
+        shutdown_event = asyncio.Event()
+
+        def _handle_signal() -> None:
+            shutdown_event.set()
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _handle_signal)
+            except NotImplementedError:
+                pass
+
+        await shutdown_event.wait()
+
+    except Exception:
+        logger.exception("Unexpected error in worker main loop")
     finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+
+        if worker is not None:
+            try:
+                async with AsyncSessionLocal() as db:
+                    await _set_worker_offline(db, worker.id)
+            except Exception:
+                logger.exception("Failed to mark worker offline")
+
         await close_publisher()
         await engine.dispose()
         await close_redis()

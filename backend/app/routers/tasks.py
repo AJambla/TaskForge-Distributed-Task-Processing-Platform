@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.config import get_settings
 from app.core.deps import CurrentUser, DBSession
 from app.core.rabbitmq import publish_task
+from app.core.rate_limit import RateLimiter
 from app.core.redis import check_idempotency, set_idempotency_task_id
 from app.models.task import Task
 from app.schemas.tasks import (
@@ -44,6 +47,7 @@ async def create_task(
     body: TaskCreateRequest,
     current_user: CurrentUser,
     db: DBSession,
+    rate_limit: Annotated[None, Depends(RateLimiter(limit=get_settings().rate_limit_task_submission_per_minute))],
     idempotency_key_header: str | None = Query(
         None,
         alias="Idempotency-Key",

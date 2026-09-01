@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.core.ssrf import validate_url_ssrf_safe
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,8 @@ async def handle_webhook_delivery(payload: dict[str, Any]) -> dict[str, Any]:
     url: str | None = payload.get("url") or payload.get("webhook_url")
     if not url:
         raise ValueError("Webhook handler requires 'url' in payload")
+
+    validate_url_ssrf_safe(url)
 
     body = payload.get("body") or payload.get("payload") or {}
     headers = payload.get("headers", {})

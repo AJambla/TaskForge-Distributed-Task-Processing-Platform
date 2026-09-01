@@ -11,6 +11,7 @@ import httpx
 from PIL import Image
 
 from app.config import get_settings
+from app.core.ssrf import validate_url_ssrf_safe
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,9 @@ async def handle_image_resize(payload: dict[str, Any]) -> dict[str, Any]:
 
     if not source and not data:
         raise ValueError("Image handler requires 'url' or 'data' in payload")
+
+    if source:
+        validate_url_ssrf_safe(source)
 
     if data and data.startswith("data:"):
         mime_part, b64_part = data.split(",", 1)
