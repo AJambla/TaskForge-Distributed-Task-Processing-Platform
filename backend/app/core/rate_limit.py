@@ -21,6 +21,10 @@ def make_rate_limiter(limit: int):
             str | None, Header(alias="X-API-Key", lowercase=True)
         ] = None,
     ) -> None:
+        # Skip rate limiting for OPTIONS (CORS preflight) requests
+        if request.method == "OPTIONS":
+            return
+
         if api_key_header:
             identifier = api_key_header
         elif request.headers.get("authorization", "").startswith("Bearer "):
