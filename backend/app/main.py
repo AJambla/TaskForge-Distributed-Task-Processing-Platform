@@ -12,6 +12,7 @@ from app.database import engine
 from app.routers import api_keys, auth, queues, tasks, workers
 
 settings = get_settings()
+cors_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 
 
 async def _check_db() -> tuple[bool, str]:
@@ -62,7 +63,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

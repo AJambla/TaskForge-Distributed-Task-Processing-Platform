@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Application
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Database
     database_url: str = "postgresql+asyncpg://taskforge:taskforge_dev_secret@localhost:5432/taskforge"

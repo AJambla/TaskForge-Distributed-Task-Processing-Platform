@@ -1,0 +1,49 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.env
+.env.local
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Node modules
+node_modules/
+
+# Tests
+tests/
+
+# Docker files
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+Docs/
+*.md
+
+# Monitoring configs
+monitoring/
+
+# Frontend
+frontend/
+
+# Load tests
+load-tests/
