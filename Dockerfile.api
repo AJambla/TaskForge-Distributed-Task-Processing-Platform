@@ -6,7 +6,7 @@ RUN groupadd -r taskforge && useradd -r -g taskforge taskforge
 
 WORKDIR /app
 
-# Install system deps needed for Pillow, psycopg, etc.
+# Install system deps needed for Pillow, psycopg, etc.rape me
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
