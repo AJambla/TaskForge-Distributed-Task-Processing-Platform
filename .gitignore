@@ -50,3 +50,5 @@ load-tests/results/
 *.sql.gz
 Docs/
 README.md
+
+/frontend-vite*.log

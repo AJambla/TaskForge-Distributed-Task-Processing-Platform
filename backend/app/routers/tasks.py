@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from app.config import get_settings
 from app.core.deps import CurrentUser, DBSession
 from app.core.rabbitmq import check_backpressure, publish_task
-from app.core.rate_limit import RateLimiter
+from app.core.rate_limit import make_rate_limiter
 from app.core.redis import check_idempotency, set_idempotency_task_id
 from app.models.task import Task
 from app.schemas.tasks import (
@@ -47,7 +47,7 @@ async def create_task(
     body: TaskCreateRequest,
     current_user: CurrentUser,
     db: DBSession,
-    rate_limit: Annotated[None, Depends(RateLimiter(limit=get_settings().rate_limit_task_submission_per_minute))],
+    rate_limit: Annotated[None, Depends(make_rate_limiter(get_settings().rate_limit_task_submission_per_minute))],
     idempotency_key_header: str | None = Query(
         None,
         alias="Idempotency-Key",
