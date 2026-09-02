@@ -12,7 +12,7 @@ asyncpg==0.30.0
 alembic==1.14.0
 
 # --- Redis ---
-redis[hiredis]==5.2.1
+redis[hiredis]==4.6.0
 
 # --- RabbitMQ ---
 aio-pika==9.4.3

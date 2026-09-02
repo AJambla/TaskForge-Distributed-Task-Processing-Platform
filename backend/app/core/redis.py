@@ -37,7 +37,6 @@ async def get_redis() -> redis.Redis:
         _client = redis.from_url(
             url,
             decode_responses=True,
-            ssl=False,
             socket_connect_timeout=5,
             socket_timeout=5,
         )

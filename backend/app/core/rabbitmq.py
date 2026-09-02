@@ -12,7 +12,7 @@ import logging
 from typing import Final
 
 import aio_pika
-from aio_pika import ExchangeType, Message, delivery_mode
+from aio_pika import ExchangeType, Message, DeliveryMode
 
 from app.config import get_settings
 
@@ -66,7 +66,7 @@ class RabbitMQPublisher:
         message = Message(
             body,
             content_type="text/plain",
-            delivery_mode=delivery_mode.PERSISTENT,
+            delivery_mode=DeliveryMode.PERSISTENT,
             headers={
                 "x-task-type": task_type,
                 "x-task-id": task_id,
