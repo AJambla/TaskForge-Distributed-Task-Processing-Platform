@@ -208,7 +208,9 @@ async def _register_worker(db) -> WorkerRegistration:
         concurrency_limit=_SETTINGS.worker_concurrency,
     )
     db.add(worker)
-    await db.flush()
+    # commit (not just flush): the caller's session closes right after
+    # registration, and an uncommitted row would be rolled back.
+    await db.commit()
     await db.refresh(worker)
     logger.info("Worker registered: id=%s hostname=%s", worker.id, worker.hostname)
     workers_online_total.set(1)

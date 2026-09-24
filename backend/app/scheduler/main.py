@@ -176,7 +176,8 @@ async def _register_scheduler(db) -> WorkerRegistration:
         concurrency_limit=1,
     )
     db.add(worker)
-    await db.flush()
+    # commit (not just flush) so the row survives the session close.
+    await db.commit()
     await db.refresh(worker)
     logger.info(
         "Scheduler registered: id=%s hostname=%s", worker.id, worker.hostname
