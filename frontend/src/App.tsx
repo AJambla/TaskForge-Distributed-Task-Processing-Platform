@@ -6,6 +6,8 @@ import Login from "./pages/auth/Login";
 import Register from "./pages/auth/Register";
 import Tasks from "./pages/dashboard/Tasks";
 import TaskDetail from "./pages/dashboard/TaskDetail";
+import Workers from "./pages/dashboard/Workers";
+import WorkerDetailPage from "./pages/dashboard/WorkerDetail";
 import ApiKeys from "./pages/dashboard/ApiKeys";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
@@ -37,6 +39,8 @@ function App() {
               <Route index element={<Navigate to="/tasks" replace />} />
               <Route path="tasks" element={<Tasks />} />
               <Route path="tasks/:id" element={<TaskDetail />} />
+              <Route path="workers" element={<Workers />} />
+              <Route path="workers/:id" element={<WorkerDetailPage />} />
               <Route path="api-keys" element={<ApiKeys />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

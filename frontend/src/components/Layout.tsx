@@ -15,6 +15,7 @@ export default function Layout() {
 
   const navLinks = [
     { path: "/tasks", label: "Tasks" },
+    { path: "/workers", label: "Workers" },
     { path: "/api-keys", label: "API Keys" },
   ];
 
