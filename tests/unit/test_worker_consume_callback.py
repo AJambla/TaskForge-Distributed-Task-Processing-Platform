@@ -27,7 +27,9 @@ async def test_subscribe_queues_passes_callable_coroutine(monkeypatch):
 
     await worker_main.subscribe_queues(publisher)
 
-    assert consumed, "no consumer was registered"
+    # One consumer per task type — main queues only; retry queues must
+    # stay consumer-less so TTL+DLX can defer redelivery.
+    assert len(consumed) == len(worker_main.TASK_TYPES)
     for callback in consumed:
         assert callable(callback)
         assert inspect.iscoroutinefunction(callback)

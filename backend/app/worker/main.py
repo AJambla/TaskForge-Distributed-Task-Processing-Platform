@@ -470,19 +470,23 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
         )
 
         retry_queue_name = f"tasks.{task_type}.retry"
+        # No consumer on the retry queue on purpose: TTL+DLX is the delayed
+        # delivery mechanism. A per-message expiration is only an expiry
+        # deadline, so any consumer would grab retries before they age.
+        # Expired retries are dead-lettered with routing key `<task_type>`,
+        # which the exchange routes back to the main queue via its binding.
         retry_queue = await channel.declare_queue(
             retry_queue_name,
             durable=True,
             arguments={
                 "x-dead-letter-exchange": EXCHANGE_NAME,
-                "x-dead-letter-routing-key": main_queue_name,
+                "x-dead-letter-routing-key": task_type,
             },
         )
         await retry_queue.bind(
             exchange, routing_key=f"tasks.{task_type}.retry"
         )
-        await retry_queue.consume(_make_handler(publisher))
-        logger.info("Subscribed to retry queue '%s'.", retry_queue_name)
+        logger.info("Declared retry queue '%s' (TTL + DLX).", retry_queue_name)
 
         dlq_queue_name = f"tasks.{task_type}.dlq"
         dlq_queue = await channel.declare_queue(
