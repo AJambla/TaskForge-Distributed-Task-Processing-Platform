@@ -34,8 +34,6 @@ export interface Task {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
-  payload?: Record<string, unknown>;
-  attempts?: TaskAttempt[];
 }
 
 export interface TaskAttempt {

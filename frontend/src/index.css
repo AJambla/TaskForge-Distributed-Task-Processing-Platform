@@ -2267,3 +2267,45 @@ html {
   font-size: 12px;
   color: var(--subtle);
 }
+
+/* ---------- tasks table ---------- */
+
+.tsk-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.tsk-filters__select {
+  width: auto !important;
+  min-width: 160px;
+}
+
+.tsk-filters__count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--subtle);
+}
+
+.tsk-id {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.tsk-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.tsk-type > svg {
+  color: var(--brand);
+}
+
+.tsk-running {
+  color: #b45309;
+}
