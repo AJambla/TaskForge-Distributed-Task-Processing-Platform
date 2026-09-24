@@ -446,7 +446,7 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
     if exchange is None:
         raise RuntimeError("RabbitMQ exchange not available.")
 
-    async def _make_handler(pub):
+    def _make_handler(pub):
         async def handler(msg):
             await on_message(msg, pub, worker_id=worker_id)
         return handler
