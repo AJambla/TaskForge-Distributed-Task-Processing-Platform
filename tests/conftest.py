@@ -1,51 +1,26 @@
-"""Test configuration — shared fixtures for unit and integration tests."""
+"""Test configuration — shared fixtures for unit and integration tests.
+
+Note: the autouse database setup/teardown that needs a live Postgres lives
+in tests/integration/conftest.py, so unit tests run without any services.
+"""
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
-import pytest
 import pytest_asyncio
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Ensure backend/app is importable from tests/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.config import get_settings
 from app.core.security import hash_password
 from app.database import AsyncSessionLocal
-from app.models.base import Base
-from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.worker_registration import WorkerRegistration
-from app.models.task import Task
-from app.models.task_attempt import TaskAttempt
-
-# Use test database URL if available, otherwise default to localhost
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://taskforge:taskforge_dev_secret@localhost:5432/taskforge_test",
-)
-engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def setup_and_teardown_db() -> AsyncGenerator[None, None]:
-    """Create tables before tests and drop them after."""
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS public"))
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    async with engine.begin() as conn:
-        for table in reversed(Base.metadata.sorted_tables):
-            await conn.execute(text(f"DELETE FROM {table.name}"))
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture
