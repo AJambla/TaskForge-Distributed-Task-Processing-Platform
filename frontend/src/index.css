@@ -934,9 +934,8 @@ select.field__input {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   height: clamp(34px, 3.6vw, 42px);
-  padding: 0 18px 0 14px;
+  padding: 0 18px;
   background: var(--glass-light);
   border: 1px solid rgba(0, 108, 210, 0.2);
   -webkit-backdrop-filter: blur(18px);
@@ -945,14 +944,6 @@ select.field__input {
   font-size: clamp(13px, 1.35vw, 15px);
   font-weight: 500;
   letter-spacing: -0.01em;
-}
-
-.badge__sq {
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border: 2px solid var(--brand);
-  flex-shrink: 0;
 }
 
 /* two-pass accent paint-on */

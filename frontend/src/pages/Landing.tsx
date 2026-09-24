@@ -250,7 +250,6 @@ export default function Landing() {
 
         <main className="landing__hero">
           <span className="badge wipe" style={d("0.18s")}>
-            <span className="badge__sq" aria-hidden />
             Task Orchestration for Engineering Teams
           </span>
 
