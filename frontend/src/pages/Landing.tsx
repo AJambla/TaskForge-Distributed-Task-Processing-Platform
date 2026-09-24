@@ -390,18 +390,6 @@ export default function Landing() {
               </p>
             </div>
             <div>
-              <h3>Product</h3>
-              <ul>
-                {LINKS.map((link) => (
-                  <li key={link.label}>
-                    <a href={link.href} onClick={onHashClick}>
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
               <h3>Console</h3>
               <ul>
                 <li>

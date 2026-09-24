@@ -1018,20 +1018,11 @@ html {
 .section__eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--brand);
-}
-
-.section__eyebrow::before {
-  content: "";
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border: 2px solid var(--brand);
 }
 
 .section__title {
@@ -1166,7 +1157,7 @@ html {
 
 .site-footer__top {
   display: grid;
-  grid-template-columns: 1.4fr repeat(3, 1fr);
+  grid-template-columns: 1.4fr repeat(2, 1fr);
   gap: 40px;
 }
 
