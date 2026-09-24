@@ -2422,3 +2422,11 @@ html {
 .wk-dot.is-dead {
   background: #b91c1c;
 }
+
+.mets-queue__title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}

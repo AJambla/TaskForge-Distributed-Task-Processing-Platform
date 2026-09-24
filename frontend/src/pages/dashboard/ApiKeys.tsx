@@ -8,6 +8,7 @@ import Modal from "../../components/ui/Modal";
 import Field, { Spinner, EmptyState } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { Copy, Check, Trash2, Key } from "lucide-react";
+import { relativeTime } from "../../lib/format";
 
 export default function ApiKeys() {
   const queryClient = useQueryClient();
@@ -15,6 +16,7 @@ export default function ApiKeys() {
   const [copied, setCopied] = useState<string | null>(null);
   const [newKeyName, setNewKeyName] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<APIKey | null>(null);
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ["api-keys"],
@@ -43,6 +45,7 @@ export default function ApiKeys() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["api-keys"] });
+      setRevokeTarget(null);
     },
   });
 
@@ -151,13 +154,17 @@ export default function ApiKeys() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
+                    <span className={`chip ${revoked ? "chip--cancelled" : "chip--online"}`}>
+                      {revoked ? "revoked" : "active"}
+                    </span>
                     <span className="text-xs" style={{ color: "var(--subtle)" }}>
+                      created {relativeTime(key.created_at)} ·{" "}
                       {key.last_used_at
-                        ? `Last used ${new Date(key.last_used_at).toLocaleDateString()}`
-                        : "Never used"}
+                        ? `last used ${relativeTime(key.last_used_at)}`
+                        : "never used"}
                     </span>
                     <button
-                      onClick={() => revokeMutation.mutate(key.id)}
+                      onClick={() => setRevokeTarget(key)}
                       disabled={revoked}
                       className="icon-btn icon-btn--danger"
                       title="Revoke key"
@@ -204,6 +211,28 @@ export default function ApiKeys() {
                 {createMutation.isPending ? "Creating…" : "Create Key"}
               </Button>
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {revokeTarget && (
+        <Modal
+          title="Revoke API key"
+          subtitle={`"${revokeTarget.name}" (${revokeTarget.key_prefix}…) will stop working immediately.`}
+          onClose={() => setRevokeTarget(null)}
+        >
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <Button variant="quiet" onClick={() => setRevokeTarget(null)}>
+              Keep key
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={revokeMutation.isPending}
+              onClick={() => revokeMutation.mutate(revokeTarget.id)}
+            >
+              {revokeMutation.isPending ? "Revoking…" : "Revoke key"}
+            </Button>
           </div>
         </Modal>
       )}
