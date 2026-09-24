@@ -1,8 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import client from "../../api/client";
 import type { APIKey, CreateAPIKeyRequest, CreateAPIKeyResponse } from "../../types";
-import { Plus, Copy, Check, Trash2, Loader2, Key } from "lucide-react";
-import { useState } from "react";
+import PageHeader from "../../components/ui/PageHeader";
+import Panel from "../../components/ui/Panel";
+import Modal from "../../components/ui/Modal";
+import Field, { Spinner, EmptyState } from "../../components/ui/Field";
+import { Button } from "../../components/ui/Button";
+import { Copy, Check, Trash2, Key } from "lucide-react";
 
 export default function ApiKeys() {
   const queryClient = useQueryClient();
@@ -48,149 +53,159 @@ export default function ApiKeys() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-100">API Keys</h1>
-          <p className="text-slate-400 mt-1">Manage your programmatic access keys</p>
-        </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-        >
-          <Plus size={16} />
-          New Key
-        </button>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="API Keys"
+        subtitle="Manage your programmatic access keys"
+        actions={
+          <Button variant="nav" size="sm" withIcon onClick={() => setShowCreateModal(true)}>
+            New Key
+          </Button>
+        }
+      />
 
       {showNewKey && (
-        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-green-400 mb-2">
-            <Check size={16} />
-            <span className="font-medium">New API key created</span>
-          </div>
-          <p className="text-sm text-green-300/70 mb-3">
+        <div
+          className="rise p-5"
+          style={{
+            background: "rgba(6,118,71,0.06)",
+            border: "1px solid rgba(6,118,71,0.3)",
+            "--d": "0.05s",
+          } as React.CSSProperties}
+        >
+          <span className="chip chip--succeeded">New API key created</span>
+          <p className="mt-3 text-sm" style={{ color: "var(--subtle)" }}>
             This key will not be shown again. Save it securely.
           </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 bg-slate-950 border border-green-500/20 rounded-lg px-4 py-2 text-sm font-mono text-green-300">
+          <div className="mt-3 flex items-center gap-2">
+            <code
+              className="mono flex-1 overflow-x-auto px-4 py-3 text-sm"
+              style={{ background: "#fff", border: "1px solid rgba(6,118,71,0.3)", color: "#067647" }}
+            >
               {showNewKey}
             </code>
             <button
               onClick={() => copyToClipboard(showNewKey, "new")}
-              className="p-2 text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-lg transition-colors"
+              className="icon-btn"
+              aria-label="Copy key"
+              style={{ background: "#fff" }}
             >
               {copied === "new" ? <Check size={16} /> : <Copy size={16} />}
             </button>
           </div>
           <button
             onClick={() => setShowNewKey(null)}
-            className="mt-3 text-sm text-green-400/70 hover:text-green-400"
+            className="navlink mt-3 !text-xs"
+            style={{ color: "var(--brand)" }}
           >
             Done
           </button>
         </div>
       )}
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <Panel bodyClassName="" delay={0.08}>
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 size={32} className="text-indigo-500 animate-spin" />
+            <Spinner size={26} />
           </div>
         ) : !keys?.length ? (
-          <div className="text-center py-16 text-slate-400">
-            <Key className="mx-auto mb-4 opacity-50" size={48} />
-            <p>No API keys yet</p>
-            <p className="text-sm mt-1">Create your first key to get started</p>
-          </div>
+          <EmptyState
+            icon={<Key size={22} />}
+            title="No API keys yet"
+            hint="Create your first key to get started."
+          />
         ) : (
-          <div className="divide-y divide-slate-800">
-            {keys.map((key) => (
-              <div key={key.id} className="px-6 py-4 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center">
-                    <Key size={18} className="text-slate-400" />
+          <ul>
+            {keys.map((key) => {
+              const revoked = key.revoked_at !== null;
+              return (
+                <li
+                  key={key.id}
+                  className="flex flex-wrap items-center justify-between gap-4 px-6 py-4"
+                  style={{ borderBottom: "1px solid var(--line-soft)" }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className="flex h-10 w-10 items-center justify-center"
+                      style={{
+                        border: "1px solid var(--line)",
+                        background: "var(--app-bg)",
+                        color: revoked ? "var(--line-strong)" : "var(--brand)",
+                      }}
+                    >
+                      <Key size={16} />
+                    </div>
+                    <div>
+                      <p
+                        className="font-medium"
+                        style={{
+                          color: revoked ? "var(--subtle)" : "var(--text)",
+                          textDecoration: revoked ? "line-through" : undefined,
+                        }}
+                      >
+                        {key.name}
+                      </p>
+                      <p className="mono text-xs" style={{ color: "var(--subtle)" }}>
+                        {key.key_prefix}…
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-slate-200">{key.name}</p>
-                    <p className="text-sm text-slate-500 font-mono">{key.key_prefix}…</p>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs" style={{ color: "var(--subtle)" }}>
+                      {key.last_used_at
+                        ? `Last used ${new Date(key.last_used_at).toLocaleDateString()}`
+                        : "Never used"}
+                    </span>
+                    <button
+                      onClick={() => revokeMutation.mutate(key.id)}
+                      disabled={revoked}
+                      className="icon-btn icon-btn--danger"
+                      title="Revoke key"
+                      aria-label={`Revoke ${key.name}`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-slate-500">
-                    {key.last_used_at
-                      ? `Last used ${new Date(key.last_used_at).toLocaleDateString()}`
-                      : "Never used"}
-                  </span>
-                  <button
-                    onClick={() => revokeMutation.mutate(key.id)}
-                    disabled={key.revoked_at !== null}
-                    className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Revoke key"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+                </li>
+              );
+            })}
+          </ul>
         )}
-      </div>
+      </Panel>
 
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800">
-              <h2 className="text-lg font-semibold text-slate-100">Create API Key</h2>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="text-slate-400 hover:text-slate-200"
+        <Modal
+          title="Create API Key"
+          subtitle="Keys grant programmatic access to your queues"
+          onClose={() => setShowCreateModal(false)}
+        >
+          <div className="space-y-5">
+            <Field label="Key name">
+              <input
+                type="text"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                className="field__input"
+                placeholder="e.g., Production Key"
+                maxLength={100}
+              />
+            </Field>
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="quiet" onClick={() => setShowCreateModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="nav"
+                size="sm"
+                withIcon
+                disabled={!newKeyName.trim() || createMutation.isPending}
+                onClick={() => createMutation.mutate(newKeyName)}
               >
-                <Plus size={20} className="rotate-45" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  Key name
-                </label>
-                <input
-                  type="text"
-                  value={newKeyName}
-                  onChange={(e) => setNewKeyName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="e.g., Production Key"
-                  maxLength={100}
-                />
-              </div>
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => createMutation.mutate(newKeyName)}
-                  disabled={!newKeyName.trim() || createMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  {createMutation.isPending ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <Key size={16} />
-                      Create Key
-                    </>
-                  )}
-                </button>
-              </div>
+                {createMutation.isPending ? "Creating…" : "Create Key"}
+              </Button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

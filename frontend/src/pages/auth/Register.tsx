@@ -1,7 +1,19 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { Eye, EyeOff, Mail, Lock, AlertCircle, CheckCircle } from "lucide-react";
+import { LogoMark } from "../../components/ui/Logo";
+import { Button } from "../../components/ui/Button";
+import Field, { Spinner } from "../../components/ui/Field";
+import { Eye, EyeOff } from "lucide-react";
+
+const d = (s: string) => ({ "--d": s } as React.CSSProperties);
+
+const STRENGTH = [
+  { label: "Weak", color: "#b91c1c" },
+  { label: "Fair", color: "#c2410c" },
+  { label: "Good", color: "#b45309" },
+  { label: "Strong", color: "#067647" },
+];
 
 export default function Register() {
   const { register } = useAuth();
@@ -24,8 +36,7 @@ export default function Register() {
   };
 
   const strength = passwordStrength(password);
-  const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"][strength] || "Weak";
-  const strengthColor = ["", "bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-green-500"][strength] || "bg-slate-700";
+  const strengthInfo = STRENGTH[Math.max(0, strength - 1)];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,133 +64,147 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-xl">T</span>
+    <div className="app-shell flex min-h-screen flex-col">
+      <header className="appbar">
+        <div className="mx-auto flex h-16 w-full max-w-[1180px] items-center px-4 sm:px-6 lg:px-8">
+          <Link to="/" className="logo-link inline-flex items-center gap-2.5" aria-label="TaskForge home">
+            <LogoMark width={28} />
+            <span className="text-[17px] font-semibold tracking-[-0.03em]">TaskForge</span>
+          </Link>
+          <div className="ml-auto text-sm" style={{ color: "var(--subtle)" }}>
+            Already registered?{" "}
+            <Link to="/login" className="font-medium" style={{ color: "var(--brand)" }}>
+              Sign in
+            </Link>
           </div>
-          <h1 className="text-2xl font-semibold text-slate-100">Create account</h1>
-          <p className="text-slate-400 mt-1">Get started with TaskForge</p>
         </div>
+      </header>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
-          {success ? (
-            <div className="text-center py-8">
-              <CheckCircle className="mx-auto text-green-500 mb-4" size={48} />
-              <h2 className="text-xl font-semibold text-slate-100 mb-2">Account created!</h2>
-              <p className="text-slate-400">Redirecting to login...</p>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {error && (
-                <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-4 py-3">
-                  <AlertCircle size={16} />
-                  {error}
+      <main className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="w-full max-w-[420px]">
+          <div className="wipe" style={d("0.05s")}>
+            <span className="badge">
+              <span className="badge__sq" aria-hidden />
+              Start orchestrating
+            </span>
+            <h1
+              className="mt-5 font-semibold"
+              style={{ fontSize: 34, letterSpacing: "-0.035em", lineHeight: 1.15 }}
+            >
+              Create your account.
+            </h1>
+            <p className="mt-2 text-sm" style={{ color: "var(--subtle)" }}>
+              Get your queues, workers and metrics in one console.
+            </p>
+          </div>
+
+          <div className="panel mt-8 rise" style={{ ...d("0.18s"), padding: 28 }}>
+            {success ? (
+              <div className="py-8 text-center">
+                <span className="chip chip--succeeded mx-auto" style={{ padding: "10px 16px" }}>
+                  Account created
+                </span>
+                <p className="mt-4 text-sm" style={{ color: "var(--subtle)" }}>
+                  Redirecting to sign in…
+                </p>
+                <div className="mt-6 flex justify-center">
+                  <Spinner size={22} />
                 </div>
-              )}
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {error && (
+                  <div
+                    className="chip chip--failed w-full"
+                    style={{ padding: "12px 14px", display: "flex", whiteSpace: "normal" }}
+                    role="alert"
+                  >
+                    {error}
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  Email
-                </label>
-                <div className="relative">
-                  <Mail
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
+                <Field label="Email">
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="field__input"
                     placeholder="you@example.com"
                     required
+                    autoComplete="email"
                   />
-                </div>
-              </div>
+                </Field>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-10 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    placeholder="••••••••"
-                    required
-                    minLength={8}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-                {password && (
-                  <div className="mt-2">
-                    <div className="flex gap-1 mb-1">
-                      {[1, 2, 3, 4].map((i) => (
-                        <div
-                          key={i}
-                          className={`h-1 flex-1 rounded-full ${
-                            i <= strength ? strengthColor : "bg-slate-700"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-xs text-slate-500">{strengthLabel}</p>
+                <Field
+                  label="Password"
+                  hint={
+                    password ? (
+                      <div className="flex items-center gap-3">
+                        <span className="flex flex-1 gap-1" aria-hidden>
+                          {[1, 2, 3, 4].map((i) => (
+                            <span
+                              key={i}
+                              className="h-[3px] flex-1"
+                              style={{
+                                background: i <= strength ? strengthInfo.color : "var(--line)",
+                              }}
+                            />
+                          ))}
+                        </span>
+                        <span style={{ color: strengthInfo.color }}>{strengthInfo.label}</span>
+                      </div>
+                    ) : null
+                  }
+                >
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="field__input pr-11"
+                      placeholder="••••••••"
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((s) => !s)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                      style={{ color: "var(--subtle)" }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
                   </div>
-                )}
-              </div>
+                </Field>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <Lock
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                  />
+                <Field label="Confirm password">
                   <input
                     type={showPassword ? "text" : "password"}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="field__input"
                     placeholder="••••••••"
                     required
+                    autoComplete="new-password"
                   />
-                </div>
-              </div>
+                </Field>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
-              >
-                {loading ? "Creating account..." : "Create account"}
-              </button>
-            </form>
-          )}
-
-          <p className="text-center text-sm text-slate-400 mt-6">
-            Already have an account?{" "}
-            <Link to="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">
-              Sign in
-            </Link>
-          </p>
+                <Button
+                  type="submit"
+                  variant="nav"
+                  withIcon
+                  disabled={loading}
+                  className="btn--block"
+                >
+                  {loading ? "Creating account…" : "Create account"}
+                </Button>
+              </form>
+            )}
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

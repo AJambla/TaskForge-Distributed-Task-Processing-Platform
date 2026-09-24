@@ -3,39 +3,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import client from "../../api/client";
 import type { Task, TaskCreateRequest } from "../../types";
-import {
-  Plus,
-  RefreshCw,
-  Loader2,
-  Filter,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Trash2,
-  RotateCw,
-  Ban,
-} from "lucide-react";
-
-const statusColors: Record<string, string> = {
-  queued: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  running: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-  succeeded: "bg-green-500/10 text-green-400 border-green-500/20",
-  failed: "bg-red-500/10 text-red-400 border-red-500/20",
-  retrying: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  dead_letter: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  cancelled: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-};
-
-const statusIcons: Record<string, import("react").JSX.Element> = {
-  queued: <Clock size={14} />,
-  running: <RefreshCw size={14} className="animate-spin" />,
-  succeeded: <CheckCircle2 size={14} />,
-  failed: <XCircle size={14} />,
-  retrying: <AlertCircle size={14} />,
-  dead_letter: <Trash2 size={14} />,
-  cancelled: <Ban size={14} />,
-};
+import PageHeader from "../../components/ui/PageHeader";
+import Panel from "../../components/ui/Panel";
+import Modal from "../../components/ui/Modal";
+import Field, { Spinner, EmptyState } from "../../components/ui/Field";
+import StatusPill from "../../components/ui/StatusPill";
+import { Button } from "../../components/ui/Button";
+import { Ban, Mail, RotateCcw, Image as ImageIcon, Webhook, Plus } from "lucide-react";
 
 const taskTypeLabels: Record<string, string> = {
   email_send: "Email Send",
@@ -104,396 +78,332 @@ export default function Tasks() {
     createMutation.mutate(formData);
   };
 
+  const onTypeChange = (type: TaskCreateRequest["task_type"]) => {
+    setFormData({
+      task_type: type,
+      payload:
+        type === "email_send"
+          ? { to: "", subject: "", body: "" }
+          : type === "image_resize"
+            ? { url: "", width: 800, height: 600 }
+            : { url: "", headers: {}, body: {} },
+    });
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-100">Tasks</h1>
-          <p className="text-slate-400 mt-1">Manage and monitor your task queue</p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2 px-4 rounded-lg transition-colors"
-        >
-          <Plus size={16} />
-          New Task
-        </button>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Tasks"
+        subtitle="Manage and monitor your task queue"
+        actions={
+          <Button variant="nav" size="sm" withIcon onClick={() => setShowModal(true)}>
+            New Task
+          </Button>
+        }
+      />
 
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 text-slate-400 text-sm">
-          <Filter size={14} />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All Status</option>
-            <option value="queued">Queued</option>
-            <option value="running">Running</option>
-            <option value="succeeded">Succeeded</option>
-            <option value="failed">Failed</option>
-            <option value="retrying">Retrying</option>
-            <option value="dead_letter">Dead Letter</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="field__input !h-10 !w-auto min-w-[180px]"
+          aria-label="Filter by status"
+        >
+          <option value="">All Status</option>
+          <option value="queued">Queued</option>
+          <option value="running">Running</option>
+          <option value="succeeded">Succeeded</option>
+          <option value="failed">Failed</option>
+          <option value="retrying">Retrying</option>
+          <option value="dead_letter">Dead Letter</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <span className="text-sm" style={{ color: "var(--subtle)" }}>
+          {data ? `${data.pagination.total} total` : "…"}
+        </span>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <Panel bodyClassName="overflow-x-auto" delay={0.08}>
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 size={32} className="text-indigo-500 animate-spin" />
+            <Spinner size={26} />
           </div>
         ) : !data?.data?.length ? (
-          <div className="text-center py-16 text-slate-400">
-            <p>No tasks found</p>
-          </div>
+          <EmptyState
+            icon={<Ban size={22} />}
+            title="No tasks found"
+            hint="Submit a task or adjust the status filter."
+          />
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-800 text-left">
-                    <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Attempts
-                    </th>
-                    <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">
-                      Created
-                    </th>
-                    <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider text-right">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {data.data.map((task) => (
-                    <tr
-                      key={task.id}
-                      onClick={() => navigate(`/tasks/${task.id}`)}
-                      className="hover:bg-slate-800/50 cursor-pointer transition-colors"
-                    >
-                      <td className="px-6 py-4">
-                        <span className="text-sm font-medium text-slate-200">
-                          {taskTypeLabels[task.task_type] || task.task_type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                            statusColors[task.status] || "bg-slate-500/10 text-slate-400 border-slate-500/20"
-                          }`}
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Attempts</th>
+                <th>Created</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.data.map((task) => (
+                <tr
+                  key={task.id}
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/app/tasks/${task.id}`)}
+                >
+                  <td className="font-medium" style={{ color: "var(--text)" }}>
+                    {taskTypeLabels[task.task_type] || task.task_type}
+                  </td>
+                  <td>
+                    <StatusPill status={task.status} />
+                  </td>
+                  <td className="mono text-xs">
+                    {task.attempt_count} / {task.max_attempts}
+                  </td>
+                  <td style={{ color: "var(--subtle)" }}>
+                    {new Date(task.created_at).toLocaleString()}
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      {(task.status === "failed" || task.status === "dead_letter") && (
+                        <button
+                          onClick={() => retryMutation.mutate(task.id)}
+                          className="icon-btn"
+                          title="Retry"
+                          aria-label="Retry task"
                         >
-                          {statusIcons[task.status] || <Clock size={14} />}
-                          {task.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-400">
-                        {task.attempt_count} / {task.max_attempts}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-400">
-                        {new Date(task.created_at).toLocaleDateString()}
-                      </td>
-                      <td
-                        onClick={(e) => e.stopPropagation()}
-                        className="px-6 py-4 text-right flex items-center justify-end gap-2"
-                      >
-                        {(task.status === "failed" || task.status === "dead_letter") && (
-                          <button
-                            onClick={() => retryMutation.mutate(task.id)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors"
-                            title="Retry"
-                          >
-                            <RotateCw size={14} />
-                          </button>
-                        )}
-                        {(task.status === "queued" || task.status === "retrying") && (
-                          <button
-                            onClick={() => cancelMutation.mutate(task.id)}
-                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition-colors"
-                            title="Cancel"
-                          >
-                            <Ban size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800">
-                <p className="text-sm text-slate-400">
-                  Page {page} of {totalPages}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    className="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+                          <RotateCcw size={14} />
+                        </button>
+                      )}
+                      {(task.status === "queued" || task.status === "retrying") && (
+                        <button
+                          onClick={() => cancelMutation.mutate(task.id)}
+                          className="icon-btn icon-btn--danger"
+                          title="Cancel"
+                          aria-label="Cancel task"
+                        >
+                          <Ban size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-      </div>
+
+        {totalPages > 1 && (
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderTop: "1px solid var(--line)" }}
+          >
+            <p className="text-sm" style={{ color: "var(--subtle)" }}>
+              Page {page} of {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                ← Previous
+              </Button>
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                Next →
+              </Button>
+            </div>
+          </div>
+        )}
+      </Panel>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-slate-800">
-              <h2 className="text-lg font-semibold text-slate-100">Submit New Task</h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-200"
+        <Modal
+          title="Submit New Task"
+          subtitle="Queue a job for your worker pool"
+          onClose={() => setShowModal(false)}
+        >
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Field label="Task Type">
+              <select
+                value={formData.task_type}
+                onChange={(e) => onTypeChange(e.target.value as TaskCreateRequest["task_type"])}
+                className="field__input"
               >
-                <XCircle size={20} />
-              </button>
+                <option value="email_send">Email Send</option>
+                <option value="image_resize">Image Resize</option>
+                <option value="webhook_delivery">Webhook Delivery</option>
+              </select>
+            </Field>
+
+            {formData.task_type === "email_send" && (
+              <>
+                <Field label="To">
+                  <input
+                    type="email"
+                    value={(formData.payload.to as string) || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, payload: { ...formData.payload, to: e.target.value } })
+                    }
+                    className="field__input"
+                    placeholder="recipient@example.com"
+                    required
+                  />
+                </Field>
+                <Field label="Subject">
+                  <input
+                    type="text"
+                    value={(formData.payload.subject as string) || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, payload: { ...formData.payload, subject: e.target.value } })
+                    }
+                    className="field__input"
+                    placeholder="Email subject"
+                    required
+                  />
+                </Field>
+                <Field label="Body">
+                  <textarea
+                    value={(formData.payload.body as string) || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, payload: { ...formData.payload, body: e.target.value } })
+                    }
+                    rows={4}
+                    className="field__input"
+                    placeholder="Email body content"
+                    required
+                  />
+                </Field>
+              </>
+            )}
+
+            {formData.task_type === "image_resize" && (
+              <>
+                <Field label="Image URL">
+                  <input
+                    type="url"
+                    value={(formData.payload.url as string) || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, payload: { ...formData.payload, url: e.target.value } })
+                    }
+                    className="field__input"
+                    placeholder="https://example.com/image.jpg"
+                    required
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Width">
+                    <input
+                      type="number"
+                      value={(formData.payload.width as number) || 800}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          payload: { ...formData.payload, width: Number(e.target.value) },
+                        })
+                      }
+                      className="field__input"
+                      min={1}
+                      required
+                    />
+                  </Field>
+                  <Field label="Height">
+                    <input
+                      type="number"
+                      value={(formData.payload.height as number) || 600}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          payload: { ...formData.payload, height: Number(e.target.value) },
+                        })
+                      }
+                      className="field__input"
+                      min={1}
+                      required
+                    />
+                  </Field>
+                </div>
+              </>
+            )}
+
+            {formData.task_type === "webhook_delivery" && (
+              <>
+                <Field label="Webhook URL">
+                  <input
+                    type="url"
+                    value={(formData.payload.url as string) || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, payload: { ...formData.payload, url: e.target.value } })
+                    }
+                    className="field__input"
+                    placeholder="https://example.com/webhook"
+                    required
+                  />
+                </Field>
+                <Field label="Body (JSON)">
+                  <textarea
+                    value={JSON.stringify(formData.payload.body || {}, null, 2)}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        payload: {
+                          ...formData.payload,
+                          body: (() => {
+                            try {
+                              return JSON.parse(e.target.value);
+                            } catch {
+                              return {};
+                            }
+                          })(),
+                        },
+                      })
+                    }
+                    rows={4}
+                    className="field__input mono text-xs"
+                  />
+                </Field>
+              </>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-4">
+              <Button variant="quiet" type="button" onClick={() => setShowModal(false)}>
+                Cancel
+              </Button>
+              <Button variant="nav" size="sm" type="submit" disabled={createMutation.isPending} withIcon>
+                {createMutation.isPending ? (
+                  <>
+                    <Spinner size={14} /> Submitting…
+                  </>
+                ) : (
+                  <>Submit Task</>
+                )}
+              </Button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  Task Type
-                </label>
-                <select
-                  value={formData.task_type}
-                  onChange={(e) => {
-                    const type = e.target.value as TaskCreateRequest["task_type"];
-                    setFormData({
-                      ...formData,
-                      task_type: type,
-                      payload:
-                        type === "email_send"
-                          ? { to: "", subject: "", body: "" }
-                          : type === "image_resize"
-                          ? { url: "", width: 800, height: 600 }
-                          : { url: "", headers: {}, body: {} },
-                    });
-                  }}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="email_send">Email Send</option>
-                  <option value="image_resize">Image Resize</option>
-                  <option value="webhook_delivery">Webhook Delivery</option>
-                </select>
-              </div>
-
-              {formData.task_type === "email_send" && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                      To
-                    </label>
-                    <input
-                      type="email"
-                      value={(formData.payload.to as string) || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, to: e.target.value },
-                        })
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="recipient@example.com"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                      Subject
-                    </label>
-                    <input
-                      type="text"
-                      value={(formData.payload.subject as string) || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, subject: e.target.value },
-                        })
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="Email subject"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                      Body
-                    </label>
-                    <textarea
-                      value={(formData.payload.body as string) || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, body: e.target.value },
-                        })
-                      }
-                      rows={4}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      placeholder="Email body content"
-                      required
-                    />
-                  </div>
-                </>
-              )}
-
-              {formData.task_type === "image_resize" && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                      Image URL
-                    </label>
-                    <input
-                      type="url"
-                      value={(formData.payload.url as string) || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, url: e.target.value },
-                        })
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="https://example.com/image.jpg"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                        Width
-                      </label>
-                      <input
-                        type="number"
-                        value={(formData.payload.width as number) || 800}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            payload: { ...formData.payload, width: Number(e.target.value) },
-                          })
-                        }
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        min={1}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                        Height
-                      </label>
-                      <input
-                        type="number"
-                        value={(formData.payload.height as number) || 600}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            payload: { ...formData.payload, height: Number(e.target.value) },
-                          })
-                        }
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        min={1}
-                        required
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {formData.task_type === "webhook_delivery" && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                      Webhook URL
-                    </label>
-                    <input
-                      type="url"
-                      value={(formData.payload.url as string) || ""}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, url: e.target.value },
-                        })
-                      }
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      placeholder="https://example.com/webhook"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                      Body (JSON)
-                    </label>
-                    <textarea
-                      value={JSON.stringify(formData.payload.body || {}, null, 2)}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: {
-                            ...formData.payload,
-                            body: (() => {
-                              try {
-                                return JSON.parse(e.target.value);
-                              } catch {
-                                return {};
-                              }
-                            })(),
-                          },
-                        })
-                      }
-                      rows={4}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-slate-200 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-slate-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createMutation.isPending}
-                  className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 disabled:cursor-not-allowed text-white font-medium py-2 px-4 rounded-lg transition-colors"
-                >
-                  {createMutation.isPending ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Plus size={16} />
-                      Submit Task
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+          </form>
+        </Modal>
       )}
+
+      <div className="flex items-center gap-6 pb-2" style={{ color: "var(--subtle)" }}>
+        <span className="inline-flex items-center gap-1.5 text-xs">
+          <Mail size={13} /> email_send
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs">
+          <ImageIcon size={13} /> image_resize
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs">
+          <Webhook size={13} /> webhook_delivery
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-xs">
+          <Plus size={13} /> {totalPages > 1 ? `${totalPages} pages` : "single page"}
+        </span>
+      </div>
     </div>
   );
 }
