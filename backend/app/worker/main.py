@@ -499,6 +499,7 @@ async def main() -> None:
 
     publisher = await get_publisher()
     worker = None
+    heartbeat_task: asyncio.Task | None = None
 
     try:
         async with AsyncSessionLocal() as db:
@@ -526,11 +527,12 @@ async def main() -> None:
     except Exception:
         logger.exception("Unexpected error in worker main loop")
     finally:
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         if worker is not None:
             try:
