@@ -5,11 +5,14 @@ Admin-only endpoint per Phase 8 spec.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter
+from sqlalchemy import extract, func, select
 
-from app.core.deps import AdminUser
+from app.core.deps import AdminUser, DBSession
 from app.core.rabbitmq import get_queue_depths
+from app.models.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +63,65 @@ async def get_queues(
         )
 
     return {"queues": list(result.values())}
+
+
+@router.get(
+    "/stats",
+    summary="Get aggregate queue/system stats",
+)
+async def get_stats(
+    admin: AdminUser,
+    db: DBSession,
+) -> dict:
+    """Status counts, recent throughput, and latency averages for the dashboard."""
+    now = datetime.now(timezone.utc)
+
+    status_rows = await db.execute(
+        select(Task.status, func.count()).group_by(Task.status)
+    )
+    counts = {row[0]: row[1] for row in status_rows.all()}
+
+    async def _completed_per_minute(minutes: int) -> float:
+        since = now - timedelta(minutes=minutes)
+        result = await db.execute(
+            select(func.count()).where(
+                Task.completed_at.is_not(None),
+                Task.completed_at >= since,
+            )
+        )
+        total = result.scalar_one()
+        return round(total / minutes, 2)
+
+    avg_pickup = await db.execute(
+        select(
+            func.avg(
+                extract("epoch", Task.started_at)
+                - extract("epoch", Task.created_at)
+            )
+        ).where(Task.started_at.is_not(None))
+    )
+    avg_execution = await db.execute(
+        select(
+            func.avg(
+                extract("epoch", Task.completed_at)
+                - extract("epoch", Task.started_at)
+            )
+        ).where(Task.completed_at.is_not(None), Task.started_at.is_not(None))
+    )
+    pickup = avg_pickup.scalar_one()
+    execution = avg_execution.scalar_one()
+
+    return {
+        "status_counts": counts,
+        "throughput": {
+            "tasks_completed_per_minute_5m": await _completed_per_minute(5),
+            "tasks_completed_per_minute_60m": await _completed_per_minute(60),
+        },
+        "latency": {
+            "avg_pickup_seconds": round(pickup, 2) if pickup is not None else None,
+            "avg_execution_seconds": (
+                round(execution, 2) if execution is not None else None
+            ),
+        },
+        "generated_at": now.isoformat(),
+    }
