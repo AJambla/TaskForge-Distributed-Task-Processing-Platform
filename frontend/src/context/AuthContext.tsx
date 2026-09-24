@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { type User, type LoginCredentials, type RegisterCredentials, type LoginResponse } from "../types";
 import client from "../api/client";
 
@@ -12,31 +12,33 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const decodeJwt = (token: string): { sub: string; role: string; email?: string } | null => {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const decoded = JSON.parse(atob(payload));
+    return decoded;
+  } catch {
+    return null;
+  }
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
+  // Restore auth synchronously on first render: ProtectedRoute redirects
+  // during its first pass, so a useEffect-based restore always loses the race.
+  const restore = (): { user: User | null; ok: boolean } => {
     const token = localStorage.getItem("access_token");
-    if (token) {
-      const decoded = decodeJwt(token);
-      if (decoded) {
-        setUser({ id: decoded.sub, email: decoded.email || "", role: decoded.role });
-        setIsAuthenticated(true);
-      }
-    }
-  }, []);
-
-  const decodeJwt = (token: string): { sub: string; role: string; email?: string } | null => {
-    try {
-      const payload = token.split(".")[1];
-      if (!payload) return null;
-      const decoded = JSON.parse(atob(payload));
-      return decoded;
-    } catch {
-      return null;
-    }
+    if (!token) return { user: null, ok: false };
+    const decoded = decodeJwt(token);
+    if (!decoded) return { user: null, ok: false };
+    return {
+      user: { id: decoded.sub, email: decoded.email || "", role: decoded.role },
+      ok: true,
+    };
   };
+  const [restored] = useState(restore);
+  const [user, setUser] = useState<User | null>(restored.user);
+  const [isAuthenticated, setIsAuthenticated] = useState(restored.ok);
 
   const login = async (credentials: LoginCredentials) => {
     const response = await client.post<LoginResponse>("/auth/login", credentials);
