@@ -22,8 +22,8 @@ async def test_subscribe_queues_passes_callable_coroutine(monkeypatch):
     channel.declare_queue.return_value = queue
 
     publisher = AsyncMock()
-    publisher._channel = channel
-    publisher._exchange = AsyncMock()
+    publisher.channel = channel
+    publisher.exchange = AsyncMock()
 
     await worker_main.subscribe_queues(publisher)
 

@@ -360,7 +360,7 @@ async def _publish_retry(
         },
         expiration=timedelta(milliseconds=delay * 1000),
     )
-    await publisher._exchange.publish(
+    await publisher.exchange.publish(
         message,
         routing_key=f"tasks.{task_type}.retry",
     )
@@ -446,11 +446,11 @@ async def _heartbeat_loop(worker: WorkerRegistration) -> None:
 
 
 async def subscribe_queues(publisher, worker_id=None) -> None:
-    channel = publisher._channel
+    channel = publisher.channel
     if channel is None:
         raise RuntimeError("RabbitMQ channel not available.")
 
-    exchange = publisher._exchange
+    exchange = publisher.exchange
     if exchange is None:
         raise RuntimeError("RabbitMQ exchange not available.")
 

@@ -15,8 +15,8 @@ async def test_publish_retry_sets_encodable_expiration():
 
     await _publish_retry(publisher, "task-123", "email_send", 5)
 
-    message = publisher._exchange.publish.await_args.args[0]
-    routing_key = publisher._exchange.publish.await_args.kwargs["routing_key"]
+    message = publisher.exchange.publish.await_args.args[0]
+    routing_key = publisher.exchange.publish.await_args.kwargs["routing_key"]
     assert routing_key == "tasks.email_send.retry"
     assert isinstance(message.expiration, timedelta)
     assert message.expiration == timedelta(milliseconds=5000)

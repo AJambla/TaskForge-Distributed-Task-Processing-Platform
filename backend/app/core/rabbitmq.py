@@ -30,6 +30,18 @@ class RabbitMQPublisher:
         self._channel: aio_pika.Channel | None = None
         self._exchange: aio_pika.Exchange | None = None
 
+    @property
+    def connection(self) -> aio_pika.Connection | None:
+        return self._connection
+
+    @property
+    def channel(self) -> aio_pika.Channel | None:
+        return self._channel
+
+    @property
+    def exchange(self) -> aio_pika.Exchange | None:
+        return self._exchange
+
     async def connect(self) -> None:
         """Establish connection, channel, and declare the main exchange."""
         settings = get_settings()
