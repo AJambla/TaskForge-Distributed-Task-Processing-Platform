@@ -4,3 +4,4 @@
 [lint.per-file-ignores]
 "backend/app/worker/main.py" = ["E402"]
 "backend/app/scheduler/main.py" = ["E402"]
+"tests/conftest.py" = ["E402"]

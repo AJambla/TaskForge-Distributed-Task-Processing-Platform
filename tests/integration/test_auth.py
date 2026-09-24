@@ -5,9 +5,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import select
 
-from app.database import AsyncSessionLocal
 from app.models.refresh_token import RefreshToken
-from app.models.user import User
 from app.main import app
 
 

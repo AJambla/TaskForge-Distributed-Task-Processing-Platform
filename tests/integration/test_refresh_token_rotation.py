@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.main import app
 from app.models.refresh_token import RefreshToken
+from app.models.user import User
 
 
 @pytest.fixture
@@ -51,8 +52,11 @@ async def test_refresh_returns_new_token(client, db_session):
 
     # Verify old token is revoked
     async with AsyncSessionLocal() as session:
+        user_id = (
+            await session.execute(select(User).where(User.email == "rotator@example.com"))
+        ).scalar_one().id
         result = await session.execute(
-            select(RefreshToken).where(RefreshToken.user_id == login_data.get("user_id"))
+            select(RefreshToken).where(RefreshToken.user_id == user_id)
         )
         # Find the old token by checking hashes — we can't easily match without
         # the raw token, but we know the new one should NOT be revoked

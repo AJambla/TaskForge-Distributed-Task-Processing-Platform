@@ -5,6 +5,7 @@ in tests/integration/conftest.py, so unit tests run without any services.
 """
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -16,6 +17,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+# Make the app's own settings (and thus AsyncSessionLocal) target the test
+# database, so the session fixtures and the schema setup/teardown in
+# tests/integration/conftest.py operate on the same DB. Must run before any
+# app import below, since Settings is cached at import time.
+_DEFAULT_URL = (
+    "postgresql+asyncpg://taskforge:taskforge_dev_secret@localhost:5432/taskforge"
+)
+_test_url = os.environ.get("TEST_DATABASE_URL") or (
+    os.environ.get("DATABASE_URL", _DEFAULT_URL).rsplit("/", 1)[0]
+    + "/taskforge_test"
+)
+os.environ["TEST_DATABASE_URL"] = _test_url
+os.environ["DATABASE_URL"] = _test_url
 
 from app.core.security import hash_password
 from app.database import AsyncSessionLocal
@@ -44,7 +59,7 @@ async def admin_user(db_session: AsyncSession) -> User:
         role="admin",
     )
     db_session.add(user)
-    await db_session.flush()
+    await db_session.commit()
     await db_session.refresh(user)
     return user
 
@@ -58,7 +73,7 @@ async def regular_user(db_session: AsyncSession) -> User:
         role="user",
     )
     db_session.add(user)
-    await db_session.flush()
+    await db_session.commit()
     await db_session.refresh(user)
     return user
 
@@ -94,6 +109,6 @@ async def worker(db_session: AsyncSession, admin_user: User) -> WorkerRegistrati
         concurrency_limit=4,
     )
     db_session.add(worker)
-    await db_session.flush()
+    await db_session.commit()
     await db_session.refresh(worker)
     return worker
