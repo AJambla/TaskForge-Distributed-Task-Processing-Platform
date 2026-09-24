@@ -15,6 +15,7 @@ def error_response(
     code: str,
     message: str,
     field: str | None = None,
+    headers: dict | None = None,
 ) -> JSONResponse:
     """Build a JSON response matching the standard error envelope."""
     body = {
@@ -27,6 +28,7 @@ def error_response(
     return JSONResponse(
         status_code=status_code,
         content=jsonable_encoder(body),
+        headers=headers,
     )
 
 
@@ -56,13 +58,16 @@ async def http_exception_handler(
     """
     status_code = exc.status_code
     detail = exc.detail
+    headers = getattr(exc, "headers", None)
 
     if isinstance(detail, dict) and "error" in detail:
-        return JSONResponse(status_code=status_code, content=detail)
+        return JSONResponse(
+            status_code=status_code, content=detail, headers=headers
+        )
 
     code = _code_for_status(status_code)
     message = str(detail) if detail else _message_for_status(status_code)
-    return error_response(status_code, code, message)
+    return error_response(status_code, code, message, headers=headers)
 
 
 async def unhandled_exception_handler(
