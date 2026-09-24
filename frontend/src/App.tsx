@@ -11,6 +11,9 @@ import Workers from "./pages/dashboard/Workers";
 import WorkerDetailPage from "./pages/dashboard/WorkerDetail";
 import Metrics from "./pages/dashboard/Metrics";
 import ApiKeys from "./pages/dashboard/ApiKeys";
+import Overview from "./pages/dashboard/Overview";
+import Queues from "./pages/dashboard/Queues";
+import Activity from "./pages/dashboard/Activity";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient({
@@ -39,13 +42,16 @@ function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Navigate to="/app/tasks" replace />} />
+              <Route index element={<Navigate to="/app/overview" replace />} />
+              <Route path="overview" element={<Overview />} />
               <Route path="tasks" element={<Tasks />} />
               <Route path="tasks/:id" element={<TaskDetail />} />
+              <Route path="queues" element={<Queues />} />
               <Route path="workers" element={<Workers />} />
               <Route path="workers/:id" element={<WorkerDetailPage />} />
               <Route path="metrics" element={<Metrics />} />
               <Route path="api-keys" element={<ApiKeys />} />
+              <Route path="activity" element={<Activity />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
