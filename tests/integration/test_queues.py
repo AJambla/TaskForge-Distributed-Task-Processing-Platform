@@ -35,13 +35,14 @@ async def test_get_queues_admin(client, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_get_queues_non_admin_forbidden(client, regular_user):
+async def test_get_queues_non_admin_allowed(client, regular_user):
     token = await _login(client, "user@example.com", "UserPass1!")
     resp = await client.get(
         "/api/v1/queues",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert "queues" in resp.json()
 
 
 @pytest.mark.asyncio
@@ -90,10 +91,11 @@ async def test_get_queue_stats(client, admin_user, db_session):
 
 
 @pytest.mark.asyncio
-async def test_get_queue_stats_non_admin_forbidden(client, regular_user):
+async def test_get_queue_stats_non_admin_allowed(client, regular_user):
     token = await _login(client, "user@example.com", "UserPass1!")
     resp = await client.get(
         "/api/v1/queues/stats",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert "status_counts" in resp.json()

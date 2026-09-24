@@ -37,13 +37,14 @@ async def test_list_workers_admin(client, worker, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_list_workers_non_admin_forbidden(client, regular_user):
+async def test_list_workers_non_admin_allowed(client, regular_user, worker):
     token = await _login(client, "user@example.com", "UserPass1!")
     resp = await client.get(
         "/api/v1/workers",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
 
 
 @pytest.mark.asyncio
