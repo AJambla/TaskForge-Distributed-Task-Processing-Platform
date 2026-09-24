@@ -398,24 +398,32 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
             await _publish_retry(
                 publisher, task_id, task_type, _calculate_retry_delay(attempt_count)
             )
-        elif attempt_count >= max_attempts:
-            async with AsyncSessionLocal() as db_retry:
-                result = await db_retry.execute(
-                    select(Task).where(Task.id == task_id)
-                )
-                dead_task = result.scalar_one_or_none()
-                if dead_task and dead_task.status != "succeeded":
-                    dead_task.status = "dead_letter"
-                    dead_task.completed_at = datetime.now(timezone.utc)
-                    await db_retry.commit()
-                    logger.info(
-                        "Task %s moved to dead_letter after %d/%d attempts.",
-                        task_id,
-                        attempt_count,
-                        max_attempts,
-                    )
+            await message.ack()
+            return
 
-        await message.ack()
+        # Attempts exhausted: record dead_letter in Postgres, then reject the
+        # message so the main queue's DLX deposits it in tasks.<type>.dlq —
+        # this is what gives the broker DLQ (and dlq_depth metrics) content.
+        marked_dead = False
+        async with AsyncSessionLocal() as db_retry:
+            result = await db_retry.execute(select(Task).where(Task.id == task_id))
+            dead_task = result.scalar_one_or_none()
+            if dead_task and dead_task.status != "succeeded":
+                dead_task.status = "dead_letter"
+                dead_task.completed_at = datetime.now(timezone.utc)
+                await db_retry.commit()
+                marked_dead = True
+                logger.info(
+                    "Task %s moved to dead_letter after %d/%d attempts.",
+                    task_id,
+                    attempt_count,
+                    max_attempts,
+                )
+
+        if marked_dead:
+            await message.reject(requeue=False)
+        else:
+            await message.ack()
 
     except Exception:
         # Infra-level failure (e.g. DB unavailable) — do NOT ack, or the

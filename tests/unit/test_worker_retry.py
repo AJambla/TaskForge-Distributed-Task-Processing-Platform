@@ -28,6 +28,7 @@ class FakeSession:
         self.execute = AsyncMock(
             return_value=self._make_result(scalar_result)
         )
+        self.commit = AsyncMock()
 
     @staticmethod
     def _make_result(scalar_result):
@@ -100,13 +101,30 @@ async def test_timeout_task_below_max_is_republished_to_retry(env):
 
 
 async def test_failed_task_at_max_goes_to_dead_letter(env):
-    publisher = env(("failed", 3, 3, None))
+    dead_row = MagicMock()
+    dead_row.status = "failed"
+    publisher = env(("failed", 3, 3, None), scalar_result=dead_row)
     msg = FakeMessage()
 
     await worker_main.on_message(msg, publisher)
 
     publisher._exchange.publish.assert_not_awaited()
+    assert dead_row.status == "dead_letter"
+    # rejected without requeue → main-queue DLX deposits it in tasks.email_send.dlq
+    msg.reject.assert_awaited_once_with(requeue=False)
+    msg.ack.assert_not_awaited()
+
+
+async def test_dead_letter_row_already_succeeded_acks_without_dropping_to_dlq(env):
+    ok_row = MagicMock()
+    ok_row.status = "succeeded"
+    publisher = env(("failed", 3, 3, None), scalar_result=ok_row)
+    msg = FakeMessage()
+
+    await worker_main.on_message(msg, publisher)
+
     msg.ack.assert_awaited_once()
+    msg.reject.assert_not_awaited()
 
 
 async def test_not_found_task_is_acked_without_republish(env):
