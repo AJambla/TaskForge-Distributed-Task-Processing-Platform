@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from app.main import app
 from app.config import get_settings
