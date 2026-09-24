@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # Worker
     worker_concurrency: int = 4
     worker_hostname: str = "worker-local"
+    # A worker/scheduler that misses heartbeats this long is shown offline.
+    worker_heartbeat_timeout_seconds: int = 60
 
     # Task Settings
     task_max_attempts_default: int = 5

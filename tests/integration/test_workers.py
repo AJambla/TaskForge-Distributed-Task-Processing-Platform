@@ -69,3 +69,47 @@ async def test_get_worker_not_found(client, admin_user):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stale_heartbeat_worker_reported_offline(
+    client, admin_user, db_session
+):
+    """A worker that stopped heartbeating must not show as online."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.models.worker_registration import WorkerRegistration
+
+    stale_beat = datetime.now(timezone.utc) - timedelta(minutes=10)
+    dead = WorkerRegistration(
+        hostname="crashed-worker",
+        status="online",
+        concurrency_limit=4,
+        last_heartbeat_at=stale_beat,
+    )
+    db_session.add(dead)
+    await db_session.commit()
+
+    token = await _login(client, "admin@example.com", "AdminPass1!")
+    resp = await client.get(
+        "/api/v1/workers",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    entry = next(w for w in resp.json() if w["hostname"] == "crashed-worker")
+    assert entry["status"] == "offline"
+
+    # The sweep committed via the app's session; drop this session's
+    # cached copies so the re-read hits the database.
+    db_session.expire_all()
+    result = await db_session.execute(
+        select(WorkerRegistration).where(
+            WorkerRegistration.hostname == "crashed-worker"
+        )
+    )
+    stored = result.scalar_one()
+    assert stored.status == "offline"
+    # The sweep must preserve when the worker was actually last seen.
+    assert stored.last_heartbeat_at < datetime.now(timezone.utc) - timedelta(minutes=9)
