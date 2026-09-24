@@ -1,0 +1,6 @@
+# Worker and scheduler run as standalone entrypoints: they insert the project
+# root into sys.path before importing app modules, so module-level imports
+# necessarily follow code (E402).
+[lint.per-file-ignores]
+"backend/app/worker/main.py" = ["E402"]
+"backend/app/scheduler/main.py" = ["E402"]

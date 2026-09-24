@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Header, Request, status
+from fastapi import HTTPException, Header, Request, status
 
 from app.core.redis import increment_rate_limit_counter
 

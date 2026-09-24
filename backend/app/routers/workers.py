@@ -7,12 +7,11 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from app.core.deps import AdminUser, DBSession
-from app.models.task_attempt import TaskAttempt
 from app.models.worker_registration import WorkerRegistration
 from app.schemas.workers import TaskAttemptResponse, WorkerDetail, WorkerListItem
 

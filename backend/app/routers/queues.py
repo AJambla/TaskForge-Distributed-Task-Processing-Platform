@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 from app.core.deps import AdminUser
 from app.core.rabbitmq import get_queue_depths
