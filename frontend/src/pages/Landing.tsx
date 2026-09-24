@@ -6,7 +6,7 @@ import { ButtonLink } from "../components/ui/Button";
 const BG_VIDEO =
   "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260808_075824_7c8a2ef3-826c-43ca-81a1-162429faa306.mp4";
 
-const LINKS = ["Platform", "Workers", "Reliability", "Pricing"];
+const LINKS = ["Platform", "Workers", "Reliability"];
 
 const d = (s: string) => ({ "--d": s } as React.CSSProperties);
 
@@ -39,11 +39,7 @@ export default function Landing() {
           <LogoMark width={36} />
         </Link>
 
-        <div className="landing__cta">
-          <ButtonLink to="/login" variant="nav" withIcon delay={0.16} className="wipe-r">
-            Launch Console
-          </ButtonLink>
-        </div>
+        <div className="landing__cta" />
 
         <button
           className="burger landing__burger link-in"
@@ -69,9 +65,6 @@ export default function Landing() {
             {label}
           </a>
         ))}
-        <ButtonLink to="/login" variant="nav" withIcon>
-          Launch Console
-        </ButtonLink>
       </div>
 
       <main className="landing__hero">
