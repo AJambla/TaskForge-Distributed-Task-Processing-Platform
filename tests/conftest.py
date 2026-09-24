@@ -18,7 +18,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.config import get_settings
 from app.core.security import hash_password
-from app.database import Base, AsyncSessionLocal
+from app.database import AsyncSessionLocal
+from app.models.base import Base
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.worker_registration import WorkerRegistration

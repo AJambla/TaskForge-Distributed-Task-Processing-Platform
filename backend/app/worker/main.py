@@ -333,7 +333,10 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
                 db, task_id, task_type, worker_id=worker_id
             )
 
-        if final_status == "not_found":
+        # Terminal states must not be re-published — only failures retry.
+        # Without this check, a task succeeding below max_attempts would be
+        # routed to the retry queue forever.
+        if final_status in ("not_found", "succeeded", "cancelled"):
             await message.ack()
             return
 
