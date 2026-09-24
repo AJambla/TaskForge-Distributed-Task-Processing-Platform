@@ -34,8 +34,6 @@ export interface Task {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
-  payload?: Record<string, unknown>;
-  attempts?: TaskAttempt[];
 }
 
 export interface TaskAttempt {
@@ -118,3 +116,27 @@ export interface QueueMetrics {
   dlq_depth: number;
   total_depth: number;
 }
+
+export interface QueueStats {
+  status_counts: Record<string, number>;
+  throughput: {
+    tasks_completed_per_minute_5m: number;
+    tasks_completed_per_minute_60m: number;
+  };
+  latency: {
+    avg_pickup_seconds: number | null;
+    avg_execution_seconds: number | null;
+  };
+  generated_at: string;
+}
+
+export type TaskStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "retrying"
+  | "dead_letter"
+  | "cancelled";
+
+export type WorkerStatus = "online" | "offline" | "draining";

@@ -1,120 +1,160 @@
-import { Outlet, NavLink, Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Outlet, NavLink, Link, useLocation } from "react-router-dom";
+import {
+  Activity,
+  BarChart3,
+  KeyRound,
+  Layers,
+  LayoutDashboard,
+  ListChecks,
+  Menu,
+  Search,
+  Server,
+  X,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { LogoMark } from "./ui/Logo";
-import { Button } from "./ui/Button";
+import CommandPalette from "./CommandPalette";
+import type { ComponentType } from "react";
 
-const NAV = [
-  { to: "/app/tasks", label: "Tasks" },
-  { to: "/app/workers", label: "Workers" },
-  { to: "/app/metrics", label: "Metrics" },
-  { to: "/app/api-keys", label: "API Keys" },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: ComponentType<{ size?: number | string }>;
+  admin?: boolean;
+  count?: string;
+}
+
+const NAV: NavItem[] = [
+  { to: "/app/overview", label: "Overview", icon: LayoutDashboard },
+  { to: "/app/tasks", label: "Tasks", icon: ListChecks },
+  { to: "/app/queues", label: "Queues", icon: Layers, admin: true },
+  { to: "/app/workers", label: "Workers", icon: Server, admin: true },
+  { to: "/app/metrics", label: "Metrics", icon: BarChart3, admin: true },
+  { to: "/app/api-keys", label: "API Keys", icon: KeyRound },
+  { to: "/app/activity", label: "Activity", icon: Activity },
 ];
 
 export default function Layout() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const isAdmin = user?.role === "admin";
+  const items = NAV.filter((n) => !n.admin || isAdmin);
 
-  const handleLogout = () => {
-    logout();
-    navigate("/");
-  };
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
 
-  return (
-    <div className="app-shell flex min-h-screen flex-col">
-      <header className="appbar">
-        <div className="mx-auto flex h-16 max-w-[1180px] items-center gap-8 px-4 sm:px-6 lg:px-8">
-          <Link to="/app" aria-label="TaskForge console" className="logo-link inline-flex items-center gap-2.5">
-            <LogoMark width={28} />
-            <span className="text-[17px] font-semibold tracking-[-0.03em]">TaskForge</span>
-          </Link>
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-          <nav className="hidden items-center gap-7 md:flex" aria-label="Console">
-            {NAV.map((link, i) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                className={({ isActive }) =>
-                  `navlink link-in ${isActive ? "is-active" : ""}`
-                }
-                style={{ "--d": `${0.02 + i * 0.06}s` } as React.CSSProperties}
-              >
-                {link.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="ml-auto hidden items-center gap-4 md:flex">
-            {user?.email && (
-              <span className="mono text-xs" style={{ color: "var(--subtle)" }}>
-                {user.email}
-              </span>
-            )}
-            <Button variant="nav" size="sm" withIcon onClick={handleLogout}>
-              Sign out
-            </Button>
-          </div>
-
-          <button
-            className="burger md:hidden"
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            aria-controls="app-menu"
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-        </div>
-
-        {menuOpen && (
-          <nav
-            id="app-menu"
-            className="flex flex-col gap-1 border-t md:hidden"
-            style={{ borderColor: "var(--line)", background: "#fff", padding: "12px 16px 16px" }}
-            aria-label="Console mobile"
-          >
-            {NAV.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                onClick={() => setMenuOpen(false)}
-                className={({ isActive }) =>
-                  `navlink block px-2 py-3 ${isActive ? "is-active" : ""}`
-                }
-              >
-                {link.label}
-              </NavLink>
-            ))}
-            <div className="pt-3">
-              <Button variant="nav" size="sm" withIcon onClick={handleLogout}>
-                Sign out
-              </Button>
-            </div>
-          </nav>
-        )}
-      </header>
-
-      <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 py-8 sm:px-6 md:py-10 lg:px-8">
-        <Outlet />
-      </main>
-
-      <footer
-        className="border-t"
-        style={{ borderColor: "var(--line)", background: "rgba(255,255,255,0.6)" }}
-      >
-        <div
-          className="mx-auto flex max-w-[1180px] items-center justify-between px-4 py-4 text-xs sm:px-6 lg:px-8"
-          style={{ color: "var(--subtle)" }}
+  const sidebar = (
+    <>
+      <div className="sidenav__brand">
+        <Link to="/app/overview" aria-label="TaskForge console" className="logo-link inline-flex items-center gap-2.5">
+          <LogoMark width={26} />
+          <span className="text-[16px] font-semibold tracking-[-0.03em]">TaskForge</span>
+        </Link>
+        <button
+          className="icon-btn sidenav__close"
+          onClick={() => setMenuOpen(false)}
+          aria-label="Close menu"
         >
-          <span>TaskForge — Task Orchestration</span>
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="sidenav__search">
+        <button className="search-trigger" onClick={() => setPaletteOpen(true)}>
+          <Search size={14} />
+          <span>Search…</span>
+          <kbd className="search-trigger__kbd">Ctrl K</kbd>
+        </button>
+      </div>
+
+      <nav className="sidenav__nav" aria-label="Console">
+        {items.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            className={({ isActive }) => `sidenav__link ${isActive ? "is-active" : ""}`}
+          >
+            <link.icon size={16} />
+            {link.label}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="sidenav__foot">
+        <div className="sidenav__user">
+          <span className="sidenav__avatar" aria-hidden>
+            {(user?.email || "?").slice(0, 1).toUpperCase()}
+          </span>
+          <span className="min-w-0">
+            <span className="sidenav__user-email truncate block">{user?.email || "Signed in"}</span>
+            <span className="sidenav__user-role">{user?.role ?? "user"}</span>
+          </span>
+        </div>
+        <div className="sidenav__foot-links">
           <Link to="/" className="navlink !text-xs">
             Landing
           </Link>
+          <button className="sidenav__signout" onClick={logout}>
+            Sign out
+          </button>
         </div>
-      </footer>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="console">
+      {/* Desktop sidebar */}
+      <aside className="sidenav hidden lg:flex">{sidebar}</aside>
+
+      {/* Mobile sidebar overlay */}
+      {menuOpen && (
+        <div className="sidenav-overlay" role="presentation" onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setMenuOpen(false);
+        }}>
+          <aside className="sidenav sidenav--mobile flex">{sidebar}</aside>
+        </div>
+      )}
+
+      <div className="console__body">
+        <header className="console__topbar lg:hidden">
+          <button className="burger" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
+            <Menu size={20} />
+          </button>
+          <Link to="/app/overview" className="logo-link inline-flex items-center gap-2">
+            <LogoMark width={22} />
+            <span className="text-[15px] font-semibold tracking-[-0.03em]">TaskForge</span>
+          </Link>
+          <button
+            className="icon-btn ml-auto"
+            aria-label="Search"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <Search size={16} />
+          </button>
+        </header>
+
+        <main className="console__main">
+          <Outlet />
+        </main>
+      </div>
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

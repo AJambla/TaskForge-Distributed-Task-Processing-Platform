@@ -56,7 +56,6 @@ export default function Login() {
         <div className="w-full max-w-[420px]">
           <div className="wipe" style={d("0.05s")}>
             <span className="badge">
-              <span className="badge__sq" aria-hidden />
               Console access
             </span>
             <h1

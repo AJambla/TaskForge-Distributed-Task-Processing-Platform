@@ -1,15 +1,22 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
 import client from "../../api/client";
-import type { Task, TaskCreateRequest } from "../../types";
+import type { Task, TaskCreateRequest, TaskListResponse } from "../../types";
 import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
 import Modal from "../../components/ui/Modal";
 import Field, { Spinner, EmptyState } from "../../components/ui/Field";
 import StatusPill from "../../components/ui/StatusPill";
+import TaskDrawer from "../../components/TaskDrawer";
 import { Button } from "../../components/ui/Button";
-import { Ban, Mail, RotateCcw, Image as ImageIcon, Webhook, Plus } from "lucide-react";
+import {
+  Ban,
+  Mail,
+  RotateCcw,
+  Image as ImageIcon,
+  Webhook,
+} from "lucide-react";
+import { durationBetween, relativeTime, shortId } from "../../lib/format";
 
 const taskTypeLabels: Record<string, string> = {
   email_send: "Email Send",
@@ -17,61 +24,90 @@ const taskTypeLabels: Record<string, string> = {
   webhook_delivery: "Webhook Delivery",
 };
 
+const TYPE_ICONS: Record<string, React.ReactNode> = {
+  email_send: <Mail size={14} />,
+  image_resize: <ImageIcon size={14} />,
+  webhook_delivery: <Webhook size={14} />,
+};
+
+const STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "retrying",
+  "dead_letter",
+  "cancelled",
+];
+
+const SORTS: Array<{ value: string; label: string }> = [
+  { value: "-created_at", label: "Newest first" },
+  { value: "created_at", label: "Oldest first" },
+  { value: "-started_at", label: "Latest started" },
+  { value: "-completed_at", label: "Latest completed" },
+  { value: "status", label: "Status" },
+  { value: "priority", label: "Priority" },
+];
+
+const emptyForm = (): TaskCreateRequest => ({
+  task_type: "email_send",
+  payload: { to: "", subject: "", body: "" },
+});
+
 export default function Tasks() {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [sort, setSort] = useState("-created_at");
+  const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState<TaskCreateRequest>({
-    task_type: "email_send",
-    payload: { to: "", subject: "", body: "" },
-  });
+  const [formData, setFormData] = useState<TaskCreateRequest>(emptyForm);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["tasks", page, statusFilter],
+    queryKey: ["tasks", page, statusFilter, typeFilter, sort],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
         page_size: "20",
+        sort,
       });
       if (statusFilter) params.append("status", statusFilter);
-      const response = await client.get(`/tasks?${params}`);
-      return response.data as { data: Task[]; pagination: { total: number } };
+      if (typeFilter) params.append("task_type", typeFilter);
+      const response = await client.get<TaskListResponse>(`/tasks?${params}`);
+      return response.data;
     },
+    refetchInterval: 10_000,
   });
 
   const cancelMutation = useMutation({
     mutationFn: async (taskId: string) => {
       await client.post(`/tasks/${taskId}/cancel`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
   });
 
   const retryMutation = useMutation({
     mutationFn: async (taskId: string) => {
       await client.post(`/tasks/${taskId}/retry`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: TaskCreateRequest) => {
-      const response = await client.post("/tasks", data);
+    mutationFn: async (payload: TaskCreateRequest) => {
+      const response = await client.post("/tasks", payload);
       return response.data as Task;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       setShowModal(false);
-      setFormData({ task_type: "email_send", payload: { to: "", subject: "", body: "" } });
+      setFormData(emptyForm());
+      setPage(1);
     },
   });
 
-  const totalPages = data ? Math.ceil(data.pagination.total / 20) : 1;
+  const totalPages = data ? Math.max(1, Math.ceil(data.pagination.total / 20)) : 1;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,13 +121,16 @@ export default function Tasks() {
         type === "email_send"
           ? { to: "", subject: "", body: "" }
           : type === "image_resize"
-            ? { url: "", width: 800, height: 600 }
+            ? { source_url: "", width: 800, height: 600 }
             : { url: "", headers: {}, body: {} },
     });
   };
 
+  const setPayloadField = (key: string, value: unknown) =>
+    setFormData((f) => ({ ...f, payload: { ...f.payload, [key]: value } }));
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Tasks"
         subtitle="Manage and monitor your task queue"
@@ -102,23 +141,55 @@ export default function Tasks() {
         }
       />
 
-      <div className="flex items-center gap-3">
+      <div className="tsk-filters">
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="field__input !h-10 !w-auto min-w-[180px]"
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(1);
+          }}
+          className="field__input !h-10 tsk-filters__select"
           aria-label="Filter by status"
         >
-          <option value="">All Status</option>
-          <option value="queued">Queued</option>
-          <option value="running">Running</option>
-          <option value="succeeded">Succeeded</option>
-          <option value="failed">Failed</option>
-          <option value="retrying">Retrying</option>
-          <option value="dead_letter">Dead Letter</option>
-          <option value="cancelled">Cancelled</option>
+          <option value="">All status</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.replace(/_/g, " ")}
+            </option>
+          ))}
         </select>
-        <span className="text-sm" style={{ color: "var(--subtle)" }}>
+        <select
+          value={typeFilter}
+          onChange={(e) => {
+            setTypeFilter(e.target.value);
+            setPage(1);
+          }}
+          className="field__input !h-10 tsk-filters__select"
+          aria-label="Filter by type"
+        >
+          <option value="">All types</option>
+          {Object.keys(taskTypeLabels).map((t) => (
+            <option key={t} value={t}>
+              {taskTypeLabels[t]}
+            </option>
+          ))}
+        </select>
+        <select
+          value={sort}
+          onChange={(e) => {
+            setSort(e.target.value);
+            setPage(1);
+          }}
+          className="field__input !h-10 tsk-filters__select"
+          aria-label="Sort tasks"
+        >
+          {SORTS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <span className="tsk-filters__count mono">
           {data ? `${data.pagination.total} total` : "…"}
         </span>
       </div>
@@ -132,28 +203,33 @@ export default function Tasks() {
           <EmptyState
             icon={<Ban size={22} />}
             title="No tasks found"
-            hint="Submit a task or adjust the status filter."
+            hint="Submit a task or adjust the filters."
           />
         ) : (
-          <table className="tbl">
+          <table className="tbl tbl--clickable">
             <thead>
               <tr>
+                <th>Task</th>
                 <th>Type</th>
                 <th>Status</th>
                 <th>Attempts</th>
+                <th>Priority</th>
+                <th>Duration</th>
                 <th>Created</th>
                 <th className="text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {data.data.map((task) => (
-                <tr
-                  key={task.id}
-                  className="cursor-pointer"
-                  onClick={() => navigate(`/app/tasks/${task.id}`)}
-                >
-                  <td className="font-medium" style={{ color: "var(--text)" }}>
-                    {taskTypeLabels[task.task_type] || task.task_type}
+                <tr key={task.id} onClick={() => setDrawerTaskId(task.id)}>
+                  <td>
+                    <span className="mono tsk-id">{shortId(task.id)}</span>
+                  </td>
+                  <td>
+                    <span className="tsk-type">
+                      {TYPE_ICONS[task.task_type] ?? null}
+                      {taskTypeLabels[task.task_type] || task.task_type}
+                    </span>
                   </td>
                   <td>
                     <StatusPill status={task.status} />
@@ -161,8 +237,22 @@ export default function Tasks() {
                   <td className="mono text-xs">
                     {task.attempt_count} / {task.max_attempts}
                   </td>
-                  <td style={{ color: "var(--subtle)" }}>
-                    {new Date(task.created_at).toLocaleString()}
+                  <td className="mono text-xs">
+                    {task.priority > 0 ? `+${task.priority}` : task.priority}
+                  </td>
+                  <td className="mono text-xs">
+                    {task.started_at ? (
+                      task.completed_at ? (
+                        durationBetween(task.started_at, task.completed_at)
+                      ) : (
+                        <span className="tsk-running">{durationBetween(task.started_at, null)}</span>
+                      )
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td title={new Date(task.created_at).toLocaleString()}>
+                    {relativeTime(task.created_at)}
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
@@ -249,9 +339,7 @@ export default function Tasks() {
                   <input
                     type="email"
                     value={(formData.payload.to as string) || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, payload: { ...formData.payload, to: e.target.value } })
-                    }
+                    onChange={(e) => setPayloadField("to", e.target.value)}
                     className="field__input"
                     placeholder="recipient@example.com"
                     required
@@ -261,9 +349,7 @@ export default function Tasks() {
                   <input
                     type="text"
                     value={(formData.payload.subject as string) || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, payload: { ...formData.payload, subject: e.target.value } })
-                    }
+                    onChange={(e) => setPayloadField("subject", e.target.value)}
                     className="field__input"
                     placeholder="Email subject"
                     required
@@ -272,9 +358,7 @@ export default function Tasks() {
                 <Field label="Body">
                   <textarea
                     value={(formData.payload.body as string) || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, payload: { ...formData.payload, body: e.target.value } })
-                    }
+                    onChange={(e) => setPayloadField("body", e.target.value)}
                     rows={4}
                     className="field__input"
                     placeholder="Email body content"
@@ -289,10 +373,8 @@ export default function Tasks() {
                 <Field label="Image URL">
                   <input
                     type="url"
-                    value={(formData.payload.url as string) || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, payload: { ...formData.payload, url: e.target.value } })
-                    }
+                    value={(formData.payload.source_url as string) || ""}
+                    onChange={(e) => setPayloadField("source_url", e.target.value)}
                     className="field__input"
                     placeholder="https://example.com/image.jpg"
                     required
@@ -303,12 +385,7 @@ export default function Tasks() {
                     <input
                       type="number"
                       value={(formData.payload.width as number) || 800}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, width: Number(e.target.value) },
-                        })
-                      }
+                      onChange={(e) => setPayloadField("width", Number(e.target.value))}
                       className="field__input"
                       min={1}
                       required
@@ -318,12 +395,7 @@ export default function Tasks() {
                     <input
                       type="number"
                       value={(formData.payload.height as number) || 600}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          payload: { ...formData.payload, height: Number(e.target.value) },
-                        })
-                      }
+                      onChange={(e) => setPayloadField("height", Number(e.target.value))}
                       className="field__input"
                       min={1}
                       required
@@ -339,9 +411,7 @@ export default function Tasks() {
                   <input
                     type="url"
                     value={(formData.payload.url as string) || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, payload: { ...formData.payload, url: e.target.value } })
-                    }
+                    onChange={(e) => setPayloadField("url", e.target.value)}
                     className="field__input"
                     placeholder="https://example.com/webhook"
                     required
@@ -349,22 +419,14 @@ export default function Tasks() {
                 </Field>
                 <Field label="Body (JSON)">
                   <textarea
-                    value={JSON.stringify(formData.payload.body || {}, null, 2)}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        payload: {
-                          ...formData.payload,
-                          body: (() => {
-                            try {
-                              return JSON.parse(e.target.value);
-                            } catch {
-                              return {};
-                            }
-                          })(),
-                        },
-                      })
-                    }
+                    defaultValue={JSON.stringify(formData.payload.body || {}, null, 2)}
+                    onChange={(e) => {
+                      try {
+                        setPayloadField("body", JSON.parse(e.target.value));
+                      } catch {
+                        /* keep last valid body until JSON parses */
+                      }
+                    }}
                     rows={4}
                     className="field__input mono text-xs"
                   />
@@ -372,11 +434,52 @@ export default function Tasks() {
               </>
             )}
 
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Priority" hint="-100 … 100, higher runs first">
+                <input
+                  type="number"
+                  value={formData.priority ?? 0}
+                  onChange={(e) =>
+                    setFormData((f) => ({ ...f, priority: Number(e.target.value) }))
+                  }
+                  className="field__input"
+                  min={-100}
+                  max={100}
+                />
+              </Field>
+              <Field label="Max attempts">
+                <input
+                  type="number"
+                  value={formData.max_attempts ?? 5}
+                  onChange={(e) =>
+                    setFormData((f) => ({ ...f, max_attempts: Number(e.target.value) }))
+                  }
+                  className="field__input"
+                  min={1}
+                  max={20}
+                />
+              </Field>
+            </div>
+
+            {createMutation.error && (
+              <p className="text-xs" style={{ color: "#b91c1c" }}>
+                {(
+                  createMutation.error as { response?: { data?: { error?: { message?: string } } } }
+                )?.response?.data?.error?.message ?? "Failed to submit task."}
+              </p>
+            )}
+
             <div className="flex items-center justify-end gap-3 pt-4">
               <Button variant="quiet" type="button" onClick={() => setShowModal(false)}>
                 Cancel
               </Button>
-              <Button variant="nav" size="sm" type="submit" disabled={createMutation.isPending} withIcon>
+              <Button
+                variant="nav"
+                size="sm"
+                type="submit"
+                disabled={createMutation.isPending}
+                withIcon
+              >
                 {createMutation.isPending ? (
                   <>
                     <Spinner size={14} /> Submitting…
@@ -390,20 +493,7 @@ export default function Tasks() {
         </Modal>
       )}
 
-      <div className="flex items-center gap-6 pb-2" style={{ color: "var(--subtle)" }}>
-        <span className="inline-flex items-center gap-1.5 text-xs">
-          <Mail size={13} /> email_send
-        </span>
-        <span className="inline-flex items-center gap-1.5 text-xs">
-          <ImageIcon size={13} /> image_resize
-        </span>
-        <span className="inline-flex items-center gap-1.5 text-xs">
-          <Webhook size={13} /> webhook_delivery
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-xs">
-          <Plus size={13} /> {totalPages > 1 ? `${totalPages} pages` : "single page"}
-        </span>
-      </div>
+      <TaskDrawer taskId={drawerTaskId} onClose={() => setDrawerTaskId(null)} />
     </div>
   );
 }

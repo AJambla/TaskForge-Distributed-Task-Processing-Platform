@@ -1,23 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
-import client from "../../api/client";
-import type { QueueMetrics } from "../../types";
+import { useMemo } from "react";
+import { AlertOctagon, Gauge, Layers, Timer, TrendingUp } from "lucide-react";
 import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
-import { PageLoading } from "../../components/ui/Field";
-import { Gauge, Timer, Layers, Archive } from "lucide-react";
-
-interface Stats {
-  status_counts: Record<string, number>;
-  throughput: {
-    tasks_completed_per_minute_5m: number;
-    tasks_completed_per_minute_60m: number;
-  };
-  latency: {
-    avg_pickup_seconds: number | null;
-    avg_execution_seconds: number | null;
-  };
-  generated_at: string;
-}
+import StatCard from "../../components/ui/StatCard";
+import { PageLoading, EmptyState } from "../../components/ui/Field";
+import { BarRow, Donut, DonutLegend, STATUS_COLORS } from "../../components/ui/Charts";
+import { useQueueStats, useQueues } from "../../api/queries";
+import { formatSeconds, relativeTime } from "../../lib/format";
 
 const STATUS_ORDER = [
   "queued",
@@ -29,167 +18,162 @@ const STATUS_ORDER = [
   "cancelled",
 ];
 
-const STATUS_COLOR: Record<string, string> = {
-  queued: "var(--brand)",
-  running: "#b45309",
-  retrying: "#c2410c",
-  succeeded: "#067647",
-  failed: "#b91c1c",
-  dead_letter: "#6d28d9",
-  cancelled: "var(--subtle)",
-};
-
-function formatSeconds(value: number | null): string {
-  if (value === null || value === undefined) return "—";
-  return value >= 60 ? `${(value / 60).toFixed(1)}m` : `${value.toFixed(2)}s`;
-}
+const isForbidden = (error: unknown) =>
+  (error as { response?: { status?: number } })?.response?.status === 403;
 
 export default function Metrics() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ["queue-stats"],
-    queryFn: async () => {
-      const response = await client.get("/queues/stats");
-      return response.data as Stats;
-    },
-    refetchInterval: 5000,
-  });
+  const statsQuery = useQueueStats(true);
+  const queuesQuery = useQueues(true);
 
-  const { data: queues, isLoading: queuesLoading } = useQuery({
-    queryKey: ["queue-depths"],
-    queryFn: async () => {
-      const response = await client.get("/queues");
-      return (response.data as { queues: QueueMetrics[] }).queues;
-    },
-    refetchInterval: 5000,
-  });
+  const forbidden = isForbidden(statsQuery.error) || isForbidden(queuesQuery.error);
+  const stats = statsQuery.data;
+  const queues = queuesQuery.data ?? [];
 
-  const isLoading = statsLoading || queuesLoading;
+  const segments = useMemo(() => {
+    const counts = stats?.status_counts ?? {};
+    return STATUS_ORDER.filter((s) => (counts[s] ?? 0) > 0).map((s) => ({
+      label: s,
+      value: counts[s],
+      color: STATUS_COLORS[s] ?? "var(--subtle)",
+    }));
+  }, [stats]);
 
-  if (isLoading) return <PageLoading />;
+  const totalTasks = segments.reduce((s, x) => s + x.value, 0);
+  const maxDepth = Math.max(1, ...queues.map((q) => Math.max(q.main_depth, q.retry_depth, q.dlq_depth)));
 
-  const topCards = [
-    {
-      icon: <Gauge size={14} />,
-      label: "Throughput (5m)",
-      value: stats?.throughput.tasks_completed_per_minute_5m ?? 0,
-      unit: "tasks/min",
-    },
-    {
-      icon: <Gauge size={14} />,
-      label: "Throughput (1h)",
-      value: stats?.throughput.tasks_completed_per_minute_60m ?? 0,
-      unit: "tasks/min",
-    },
-    {
-      icon: <Timer size={14} />,
-      label: "Avg Pickup",
-      value: formatSeconds(stats?.latency.avg_pickup_seconds ?? null),
-      unit: "",
-    },
-    {
-      icon: <Timer size={14} />,
-      label: "Avg Execution",
-      value: formatSeconds(stats?.latency.avg_execution_seconds ?? null),
-      unit: "",
-    },
-  ];
+  if (statsQuery.isLoading || queuesQuery.isLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Metrics" subtitle="Live platform snapshot" />
+        {forbidden ? (
+          <Panel delay={0.05}>
+            <EmptyState
+              icon={<Gauge size={22} />}
+              title="Metrics are restricted to admins."
+              hint="Queue statistics require an admin account."
+            />
+          </Panel>
+        ) : (
+          <PageLoading />
+        )}
+      </div>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Metrics" subtitle="Live platform snapshot" />
+        <Panel delay={0.05}>
+          <EmptyState
+            icon={<Gauge size={22} />}
+            title="Metrics are restricted to admins."
+            hint="Queue statistics require an admin account."
+          />
+        </Panel>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
-        title="Queue Metrics"
+        title="Metrics"
         subtitle={
           <span className="inline-flex items-center gap-2">
             <span className="chip-dot" style={{ color: "var(--brand)" }} aria-hidden />
-            System throughput, latency and queue depth, refreshed every 5 seconds
+            Throughput, latency and queue depth · snapshot {stats ? relativeTime(stats.generated_at) : "—"}
           </span>
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        {topCards.map((c, i) => (
-          <div
-            key={c.label}
-            className="stat rise"
-            style={{ "--d": `${0.1 + i * 0.06}s` } as React.CSSProperties}
-          >
-            <p className="stat__label">
-              {c.icon} {c.label}
-            </p>
-            <p className="stat__value">
-              {c.value}
-              {c.unit && <span className="stat__unit">{c.unit}</span>}
-            </p>
-          </div>
-        ))}
+      <div className="ov-stats">
+        <StatCard
+          label="Throughput (5m)"
+          value={(stats?.throughput.tasks_completed_per_minute_5m ?? 0).toFixed(1)}
+          unit="tasks/min"
+          icon={<TrendingUp size={14} />}
+          accent="#067647"
+          delay={0.05}
+        />
+        <StatCard
+          label="Throughput (1h)"
+          value={(stats?.throughput.tasks_completed_per_minute_60m ?? 0).toFixed(1)}
+          unit="tasks/min"
+          icon={<Gauge size={14} />}
+          delay={0.1}
+        />
+        <StatCard
+          label="Avg pickup delay"
+          value={formatSeconds(stats?.latency.avg_pickup_seconds ?? null)}
+          icon={<Timer size={14} />}
+          accent="#d97706"
+          sub="queue → worker"
+          delay={0.15}
+        />
+        <StatCard
+          label="Avg execution"
+          value={formatSeconds(stats?.latency.avg_execution_seconds ?? null)}
+          icon={<Timer size={14} />}
+          accent="#6d28d9"
+          sub="worker run time"
+          delay={0.2}
+        />
       </div>
 
-      <Panel
-        title={
-          <span className="inline-flex items-center gap-2">
-            <Layers size={14} style={{ color: "var(--subtle)" }} /> Tasks by Status
-          </span>
-        }
-        delay={0.2}
-      >
-        <div className="grid grid-cols-2 gap-x-4 gap-y-6 md:grid-cols-4 lg:grid-cols-7">
-          {STATUS_ORDER.map((status) => (
-            <div key={status} style={{ borderLeft: `2px solid ${STATUS_COLOR[status]}`, paddingLeft: 12 }}>
-              <p className="section-label" style={{ color: STATUS_COLOR[status], textTransform: "none", letterSpacing: 0 }}>
-                {status.replace(/_/g, " ")}
-              </p>
-              <p className="stat__value" style={{ marginTop: 4 }}>
-                {stats?.status_counts[status] ?? 0}
-              </p>
+      <div className="ov-grid-2">
+        <Panel
+          title="Tasks by status"
+          subtitle="All-time counts across the platform"
+          delay={0.22}
+        >
+          {segments.length === 0 ? (
+            <p className="ov-empty">No tasks recorded yet.</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-6">
+              <Donut
+                segments={segments}
+                centerValue={totalTasks.toLocaleString()}
+                centerLabel="tasks"
+              />
+              <div className="min-w-[200px] flex-1">
+                <DonutLegend segments={segments} />
+              </div>
             </div>
-          ))}
-        </div>
-      </Panel>
+          )}
+        </Panel>
 
-      <Panel
-        title={
-          <span className="inline-flex items-center gap-2">
-            <Archive size={14} style={{ color: "var(--subtle)" }} /> Queue Depths by Task Type
-          </span>
-        }
-        delay={0.26}
-        bodyClassName="overflow-x-auto"
-      >
-        {!queues?.length ? (
-          <p className="py-10 text-center text-sm" style={{ color: "var(--subtle)" }}>
-            No queues reported yet
-          </p>
-        ) : (
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Task Type</th>
-                <th>Main</th>
-                <th>Retry</th>
-                <th>Dead Letter</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queues.map((row) => (
-                <tr key={row.task_type}>
-                  <td className="font-medium" style={{ color: "var(--text)" }}>
-                    {row.task_type}
-                  </td>
-                  <td className="mono text-sm">{row.main_depth}</td>
-                  <td className="mono text-sm">{row.retry_depth}</td>
-                  <td className="mono text-sm" style={{ color: "#6d28d9" }}>
-                    {row.dlq_depth}
-                  </td>
-                  <td className="mono text-sm font-semibold" style={{ color: "var(--text)" }}>
-                    {row.total_depth}
-                  </td>
-                </tr>
+        <Panel
+          title="Queue depths"
+          subtitle="Messages waiting in RabbitMQ"
+          actions={<Layers size={16} style={{ color: "var(--subtle)" }} aria-hidden />}
+          delay={0.28}
+        >
+          {queues.length === 0 ? (
+            <p className="ov-empty">No queues reported yet.</p>
+          ) : (
+            <div className="space-y-5">
+              {queues.map((q) => (
+                <div key={q.task_type}>
+                  <p className="mets-queue__title">{q.task_type.replace(/_/g, " ")}</p>
+                  <div className="mt-2 space-y-2">
+                    <BarRow label="Main" value={q.main_depth} max={maxDepth} />
+                    <BarRow label="Retry" value={q.retry_depth} max={maxDepth} color="#d97706" />
+                    <BarRow label="DLQ" value={q.dlq_depth} max={maxDepth} color="#6d28d9" />
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        )}
-      </Panel>
+            </div>
+          )}
+        </Panel>
+      </div>
+
+      {totalTasks > 0 && (
+        <p className="flex items-center gap-2 text-xs" style={{ color: "var(--subtle)" }}>
+          <AlertOctagon size={13} />
+          Status counts are lifetime totals; queue depths are live broker readings.
+        </p>
+      )}
     </div>
   );
 }
