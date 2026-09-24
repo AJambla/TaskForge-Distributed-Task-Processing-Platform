@@ -24,6 +24,7 @@ class FakeMessage:
         self.body = task_id.encode("utf-8")
         self.headers = {"x-task-type": task_type}
         self.ack = AsyncMock()
+        self.reject = AsyncMock()
 
 
 class FakeSession:
@@ -121,3 +122,16 @@ async def test_not_found_task_is_acked_without_republish(env):
 
     msg.ack.assert_awaited_once()
     publisher._exchange.publish.assert_not_awaited()
+
+
+async def test_infra_error_requeues_instead_of_ackning(env, monkeypatch):
+    publisher = env(("ignored", 0, 0))
+    monkeypatch.setattr(
+        worker_main, "consume_task", AsyncMock(side_effect=ConnectionError("db down"))
+    )
+    msg = FakeMessage()
+
+    await worker_main.on_message(msg, publisher)
+
+    msg.ack.assert_not_awaited()
+    msg.reject.assert_awaited_once_with(requeue=True)

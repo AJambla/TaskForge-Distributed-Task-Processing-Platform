@@ -362,8 +362,13 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
         await message.ack()
 
     except Exception:
-        logger.exception("Error processing task %s", task_id)
-        await message.ack()
+        # Infra-level failure (e.g. DB unavailable) — do NOT ack, or the
+        # message is lost while the task row stays 'queued' forever.
+        # Requeue so RabbitMQ redelivers once the dependency recovers.
+        logger.exception(
+            "Unexpected error processing task %s — requeueing.", task_id
+        )
+        await message.reject(requeue=True)
 
 
 async def _heartbeat_loop(worker: WorkerRegistration) -> None:
