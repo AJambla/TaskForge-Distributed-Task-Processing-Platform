@@ -118,10 +118,8 @@ async def get_stats(
             "tasks_completed_per_minute_60m": await _completed_per_minute(60),
         },
         "latency": {
-            "avg_pickup_seconds": round(pickup, 2) if pickup is not None else None,
-            "avg_execution_seconds": (
-                round(execution, 2) if execution is not None else None
-            ),
+            "avg_pickup_seconds": None if pickup is None else round(float(pickup), 2),
+            "avg_execution_seconds": None if execution is None else round(float(execution), 2),
         },
         "generated_at": now.isoformat(),
     }

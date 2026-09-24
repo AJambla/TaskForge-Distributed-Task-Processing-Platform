@@ -85,6 +85,8 @@ async def test_get_queue_stats(client, admin_user, db_session):
     assert data["status_counts"].get("succeeded", 0) >= 1
     assert "tasks_completed_per_minute_5m" in data["throughput"]
     assert "avg_pickup_seconds" in data["latency"]
+    # must be a JSON number, not a Decimal-serialized string — dashboard calls .toFixed()
+    assert isinstance(data["latency"]["avg_pickup_seconds"], (int, float))
 
 
 @pytest.mark.asyncio
