@@ -160,13 +160,24 @@ async def _reschedule_recurring_tasks() -> int:
 
 
 async def _register_scheduler(db) -> WorkerRegistration:
+    # Reclaim stale 'online' rows from previous (possibly killed) runs so
+    # restarts don't accumulate phantom registrations for this hostname.
+    await db.execute(
+        update(WorkerRegistration)
+        .where(
+            WorkerRegistration.hostname == _SCHEDULER_HOSTNAME,
+            WorkerRegistration.status == "online",
+        )
+        .values(status="offline")
+    )
     worker = WorkerRegistration(
         hostname=_SCHEDULER_HOSTNAME,
         status="online",
         concurrency_limit=1,
     )
     db.add(worker)
-    await db.flush()
+    # commit (not just flush) so the row survives the session close.
+    await db.commit()
     await db.refresh(worker)
     logger.info(
         "Scheduler registered: id=%s hostname=%s", worker.id, worker.hostname

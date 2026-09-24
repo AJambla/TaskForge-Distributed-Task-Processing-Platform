@@ -6,6 +6,7 @@ causing an endless re-delivery loop.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -27,6 +28,7 @@ class FakeSession:
         self.execute = AsyncMock(
             return_value=self._make_result(scalar_result)
         )
+        self.commit = AsyncMock()
 
     @staticmethod
     def _make_result(scalar_result):
@@ -44,8 +46,8 @@ class FakeSession:
 @pytest.fixture
 def env(monkeypatch):
     publisher = MagicMock()
-    publisher._exchange = MagicMock()
-    publisher._exchange.publish = AsyncMock()
+    publisher.exchange = MagicMock()
+    publisher.exchange.publish = AsyncMock()
 
     def make(consume_return, scalar_result=None):
         session = FakeSession(scalar_result=scalar_result)
@@ -64,7 +66,7 @@ async def test_succeeded_task_is_not_republished(env):
     await worker_main.on_message(msg, publisher)
 
     msg.ack.assert_awaited_once()
-    publisher._exchange.publish.assert_not_awaited()
+    publisher.exchange.publish.assert_not_awaited()
 
 
 async def test_cancelled_task_is_not_republished(env):
@@ -74,7 +76,7 @@ async def test_cancelled_task_is_not_republished(env):
     await worker_main.on_message(msg, publisher)
 
     msg.ack.assert_awaited_once()
-    publisher._exchange.publish.assert_not_awaited()
+    publisher.exchange.publish.assert_not_awaited()
 
 
 async def test_failed_task_below_max_is_republished_to_retry(env):
@@ -83,8 +85,8 @@ async def test_failed_task_below_max_is_republished_to_retry(env):
 
     await worker_main.on_message(msg, publisher)
 
-    publisher._exchange.publish.assert_awaited_once()
-    _, kwargs = publisher._exchange.publish.await_args
+    publisher.exchange.publish.assert_awaited_once()
+    _, kwargs = publisher.exchange.publish.await_args
     assert kwargs["routing_key"] == "tasks.email_send.retry"
     msg.ack.assert_awaited_once()
 
@@ -95,17 +97,34 @@ async def test_timeout_task_below_max_is_republished_to_retry(env):
 
     await worker_main.on_message(msg, publisher)
 
-    publisher._exchange.publish.assert_awaited_once()
+    publisher.exchange.publish.assert_awaited_once()
 
 
 async def test_failed_task_at_max_goes_to_dead_letter(env):
-    publisher = env(("failed", 3, 3, None))
+    dead_row = MagicMock()
+    dead_row.status = "failed"
+    publisher = env(("failed", 3, 3, None), scalar_result=dead_row)
     msg = FakeMessage()
 
     await worker_main.on_message(msg, publisher)
 
-    publisher._exchange.publish.assert_not_awaited()
+    publisher.exchange.publish.assert_not_awaited()
+    assert dead_row.status == "dead_letter"
+    # rejected without requeue → main-queue DLX deposits it in tasks.email_send.dlq
+    msg.reject.assert_awaited_once_with(requeue=False)
+    msg.ack.assert_not_awaited()
+
+
+async def test_dead_letter_row_already_succeeded_acks_without_dropping_to_dlq(env):
+    ok_row = MagicMock()
+    ok_row.status = "succeeded"
+    publisher = env(("failed", 3, 3, None), scalar_result=ok_row)
+    msg = FakeMessage()
+
+    await worker_main.on_message(msg, publisher)
+
     msg.ack.assert_awaited_once()
+    msg.reject.assert_not_awaited()
 
 
 async def test_not_found_task_is_acked_without_republish(env):
@@ -115,7 +134,7 @@ async def test_not_found_task_is_acked_without_republish(env):
     await worker_main.on_message(msg, publisher)
 
     msg.ack.assert_awaited_once()
-    publisher._exchange.publish.assert_not_awaited()
+    publisher.exchange.publish.assert_not_awaited()
 
 
 async def test_infra_error_requeues_instead_of_ackning(env, monkeypatch):
@@ -137,8 +156,8 @@ async def test_future_run_at_task_is_deferred_via_retry_ttl(env):
 
     await worker_main.on_message(msg, publisher)
 
-    publisher._exchange.publish.assert_awaited_once()
-    args, kwargs = publisher._exchange.publish.await_args
+    publisher.exchange.publish.assert_awaited_once()
+    args, kwargs = publisher.exchange.publish.await_args
     assert kwargs["routing_key"] == "tasks.email_send.retry"
-    assert args[0].expiration == "120000"
+    assert args[0].expiration == timedelta(milliseconds=120000)
     msg.ack.assert_awaited_once()

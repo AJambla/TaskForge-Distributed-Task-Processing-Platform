@@ -5,12 +5,14 @@ Admin-only endpoints per Phase 8 spec.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.core.deps import AdminUser, DBSession
 from app.models.worker_registration import WorkerRegistration
 from app.schemas.workers import TaskAttemptResponse, WorkerDetail, WorkerListItem
@@ -18,6 +20,27 @@ from app.schemas.workers import TaskAttemptResponse, WorkerDetail, WorkerListIte
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _mark_stale_workers_offline(db) -> None:
+    """Workers that stopped heartbeating are offline, whatever they claim."""
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=get_settings().worker_heartbeat_timeout_seconds
+    )
+    await db.execute(
+        update(WorkerRegistration)
+        .where(
+            WorkerRegistration.status == "online",
+            WorkerRegistration.last_heartbeat_at < cutoff,
+        )
+        .values(
+            status="offline",
+            # Self-assignment suppresses onupdate=func.now() so the stored
+            # heartbeat still shows when the worker was actually last seen.
+            last_heartbeat_at=WorkerRegistration.last_heartbeat_at,
+        )
+    )
+    await db.commit()
 
 
 @router.get(
@@ -32,6 +55,7 @@ async def list_workers(
     page_size: int = Query(20, ge=1, le=100),
 ) -> list[WorkerListItem]:
     """List all worker registrations, sorted by last heartbeat descending."""
+    await _mark_stale_workers_offline(db)
     offset = (page - 1) * page_size
     result = await db.execute(
         select(WorkerRegistration)

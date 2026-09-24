@@ -13,7 +13,7 @@ import signal
 import socket
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -62,6 +62,10 @@ _HEARTBEAT_INTERVAL_SECONDS = 15
 
 _SETTINGS = get_settings()
 _WORKER_HOSTNAME: str = os.environ.get("WORKER_HOSTNAME", socket.gethostname())
+
+# Number of handlers executing right now in this process. Reported with
+# each heartbeat so the dashboard shows real per-worker load.
+_active_task_count = 0
 
 
 def _get_timeout(task_type: str) -> int:
@@ -188,13 +192,25 @@ async def _update_worker_stats(
 
 
 async def _register_worker(db) -> WorkerRegistration:
+    # A crash/restart skips the graceful offline update — reclaim any stale
+    # 'online' row for this hostname so restarts don't pile up phantoms.
+    await db.execute(
+        update(WorkerRegistration)
+        .where(
+            WorkerRegistration.hostname == _WORKER_HOSTNAME,
+            WorkerRegistration.status == "online",
+        )
+        .values(status="offline")
+    )
     worker = WorkerRegistration(
         hostname=_WORKER_HOSTNAME,
         status="online",
         concurrency_limit=_SETTINGS.worker_concurrency,
     )
     db.add(worker)
-    await db.flush()
+    # commit (not just flush): the caller's session closes right after
+    # registration, and an uncommitted row would be rolled back.
+    await db.commit()
     await db.refresh(worker)
     logger.info("Worker registered: id=%s hostname=%s", worker.id, worker.hostname)
     workers_online_total.set(1)
@@ -207,7 +223,7 @@ async def _update_heartbeat(db, worker: WorkerRegistration) -> None:
         .where(WorkerRegistration.id == worker.id)
         .values(
             last_heartbeat_at=datetime.now(timezone.utc),
-            current_task_count=WorkerRegistration.current_task_count,
+            current_task_count=_active_task_count,
         )
     )
     await db.commit()
@@ -280,36 +296,53 @@ async def consume_task(
     handler = get_handler(task_type)
     timeout = _get_timeout(task_type)
 
+    global _active_task_count
+    _active_task_count += 1
     try:
-        start = asyncio.get_event_loop().time()
-        if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
-            result = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(
-                    None, _run_handler_in_sandbox, handler, task.payload
-                ),
-                timeout=timeout,
+        try:
+            start = asyncio.get_event_loop().time()
+            if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
+                result = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, _run_handler_in_sandbox, handler, task.payload
+                    ),
+                    timeout=timeout,
+                )
+            else:
+                result = await asyncio.wait_for(
+                    handler(task.payload), timeout=timeout
+                )
+            elapsed = asyncio.get_event_loop().time() - start
+            task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+            await _mark_success(db, task, attempt, worker_id=worker_id)
+            tasks_processed_total.labels(
+                outcome="success", task_type=task_type
+            ).inc()
+            return "succeeded", task.attempt_count, max_attempts, None
+
+        except asyncio.TimeoutError as exc:
+            elapsed = asyncio.get_event_loop().time() - start
+            task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+            await _mark_failure(
+                db, task, attempt, "timeout", exc, worker_id=worker_id
             )
-        else:
-            result = await asyncio.wait_for(handler(task.payload), timeout=timeout)
-        elapsed = asyncio.get_event_loop().time() - start
-        task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-        await _mark_success(db, task, attempt, worker_id=worker_id)
-        tasks_processed_total.labels(outcome="success", task_type=task_type).inc()
-        return "succeeded", task.attempt_count, max_attempts, None
+            tasks_processed_total.labels(
+                outcome="timeout", task_type=task_type
+            ).inc()
+            return "timeout", task.attempt_count, max_attempts, None
 
-    except asyncio.TimeoutError as exc:
-        elapsed = asyncio.get_event_loop().time() - start
-        task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-        await _mark_failure(db, task, attempt, "timeout", exc, worker_id=worker_id)
-        tasks_processed_total.labels(outcome="timeout", task_type=task_type).inc()
-        return "timeout", task.attempt_count, max_attempts, None
-
-    except Exception as exc:
-        elapsed = asyncio.get_event_loop().time() - start
-        task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-        await _mark_failure(db, task, attempt, "failure", exc, worker_id=worker_id)
-        tasks_processed_total.labels(outcome="failure", task_type=task_type).inc()
-        return "failed", task.attempt_count, max_attempts, None
+        except Exception as exc:
+            elapsed = asyncio.get_event_loop().time() - start
+            task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+            await _mark_failure(
+                db, task, attempt, "failure", exc, worker_id=worker_id
+            )
+            tasks_processed_total.labels(
+                outcome="failure", task_type=task_type
+            ).inc()
+            return "failed", task.attempt_count, max_attempts, None
+    finally:
+        _active_task_count -= 1
 
 
 async def _publish_retry(
@@ -325,9 +358,9 @@ async def _publish_retry(
             "x-task-type": task_type,
             "x-task-id": task_id,
         },
-        expiration=str(delay * 1000),
+        expiration=timedelta(milliseconds=delay * 1000),
     )
-    await publisher._exchange.publish(
+    await publisher.exchange.publish(
         message,
         routing_key=f"tasks.{task_type}.retry",
     )
@@ -365,24 +398,32 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
             await _publish_retry(
                 publisher, task_id, task_type, _calculate_retry_delay(attempt_count)
             )
-        elif attempt_count >= max_attempts:
-            async with AsyncSessionLocal() as db_retry:
-                result = await db_retry.execute(
-                    select(Task).where(Task.id == task_id)
-                )
-                dead_task = result.scalar_one_or_none()
-                if dead_task and dead_task.status != "succeeded":
-                    dead_task.status = "dead_letter"
-                    dead_task.completed_at = datetime.now(timezone.utc)
-                    await db_retry.commit()
-                    logger.info(
-                        "Task %s moved to dead_letter after %d/%d attempts.",
-                        task_id,
-                        attempt_count,
-                        max_attempts,
-                    )
+            await message.ack()
+            return
 
-        await message.ack()
+        # Attempts exhausted: record dead_letter in Postgres, then reject the
+        # message so the main queue's DLX deposits it in tasks.<type>.dlq —
+        # this is what gives the broker DLQ (and dlq_depth metrics) content.
+        marked_dead = False
+        async with AsyncSessionLocal() as db_retry:
+            result = await db_retry.execute(select(Task).where(Task.id == task_id))
+            dead_task = result.scalar_one_or_none()
+            if dead_task and dead_task.status != "succeeded":
+                dead_task.status = "dead_letter"
+                dead_task.completed_at = datetime.now(timezone.utc)
+                await db_retry.commit()
+                marked_dead = True
+                logger.info(
+                    "Task %s moved to dead_letter after %d/%d attempts.",
+                    task_id,
+                    attempt_count,
+                    max_attempts,
+                )
+
+        if marked_dead:
+            await message.reject(requeue=False)
+        else:
+            await message.ack()
 
     except Exception:
         # Infra-level failure (e.g. DB unavailable) — do NOT ack, or the
@@ -405,15 +446,15 @@ async def _heartbeat_loop(worker: WorkerRegistration) -> None:
 
 
 async def subscribe_queues(publisher, worker_id=None) -> None:
-    channel = publisher._channel
+    channel = publisher.channel
     if channel is None:
         raise RuntimeError("RabbitMQ channel not available.")
 
-    exchange = publisher._exchange
+    exchange = publisher.exchange
     if exchange is None:
         raise RuntimeError("RabbitMQ exchange not available.")
 
-    async def _make_handler(pub):
+    def _make_handler(pub):
         async def handler(msg):
             await on_message(msg, pub, worker_id=worker_id)
         return handler
@@ -437,19 +478,23 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
         )
 
         retry_queue_name = f"tasks.{task_type}.retry"
+        # No consumer on the retry queue on purpose: TTL+DLX is the delayed
+        # delivery mechanism. A per-message expiration is only an expiry
+        # deadline, so any consumer would grab retries before they age.
+        # Expired retries are dead-lettered with routing key `<task_type>`,
+        # which the exchange routes back to the main queue via its binding.
         retry_queue = await channel.declare_queue(
             retry_queue_name,
             durable=True,
             arguments={
                 "x-dead-letter-exchange": EXCHANGE_NAME,
-                "x-dead-letter-routing-key": main_queue_name,
+                "x-dead-letter-routing-key": task_type,
             },
         )
         await retry_queue.bind(
             exchange, routing_key=f"tasks.{task_type}.retry"
         )
-        await retry_queue.consume(_make_handler(publisher))
-        logger.info("Subscribed to retry queue '%s'.", retry_queue_name)
+        logger.info("Declared retry queue '%s' (TTL + DLX).", retry_queue_name)
 
         dlq_queue_name = f"tasks.{task_type}.dlq"
         dlq_queue = await channel.declare_queue(
@@ -468,6 +513,7 @@ async def main() -> None:
 
     publisher = await get_publisher()
     worker = None
+    heartbeat_task: asyncio.Task | None = None
 
     try:
         async with AsyncSessionLocal() as db:
@@ -495,11 +541,12 @@ async def main() -> None:
     except Exception:
         logger.exception("Unexpected error in worker main loop")
     finally:
-        heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         if worker is not None:
             try:

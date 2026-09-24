@@ -354,6 +354,10 @@ async def retry_task(
     # in its retryable state, not flip it to queued with no message.
     await check_backpressure()
 
+    prev_status = task.status
+    prev_attempt_count = task.attempt_count
+    prev_completed_at = task.completed_at
+
     task.status = TaskStatus.QUEUED.value
     task.attempt_count = 0
     task.started_at = None
@@ -367,6 +371,12 @@ async def retry_task(
         await publish_task(str(task.id), task.task_type)
     except Exception:
         logger.exception("Failed to re-publish retried task %s", task.id)
+        # Roll the row back to its retryable state — leaving it 'queued'
+        # with no message anywhere would strand it forever.
+        task.status = prev_status
+        task.attempt_count = prev_attempt_count
+        task.completed_at = prev_completed_at
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={

@@ -40,7 +40,7 @@ async def _check_rabbitmq() -> tuple[bool, str]:
     try:
         import aio_pika.exceptions
         publisher = await get_publisher()
-        if publisher._connection is None or publisher._connection.is_closed:
+        if publisher.connection is None or publisher.connection.is_closed:
             return False, "connection is closed"
         return True, "ok"
     except (aio_pika.exceptions.AmqpError, OSError) as exc:

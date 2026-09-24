@@ -42,3 +42,58 @@ async def test_get_queues_non_admin_forbidden(client, regular_user):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_queue_stats(client, admin_user, db_session):
+    from datetime import datetime, timezone
+    from uuid import uuid4
+
+    from app.models.task import Task
+
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        [
+            Task(
+                id=uuid4(),
+                user_id=admin_user.id,
+                task_type="email_send",
+                payload={},
+                status="succeeded",
+                started_at=now,
+                completed_at=now,
+            ),
+            Task(
+                id=uuid4(),
+                user_id=admin_user.id,
+                task_type="email_send",
+                payload={},
+                status="queued",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    token = await _login(client, "admin@example.com", "AdminPass1!")
+    resp = await client.get(
+        "/api/v1/queues/stats",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status_counts"].get("queued", 0) >= 1
+    assert data["status_counts"].get("succeeded", 0) >= 1
+    assert "tasks_completed_per_minute_5m" in data["throughput"]
+    assert "avg_pickup_seconds" in data["latency"]
+    # must be a JSON number, not a Decimal-serialized string — dashboard calls .toFixed()
+    assert isinstance(data["latency"]["avg_pickup_seconds"], (int, float))
+
+
+@pytest.mark.asyncio
+async def test_get_queue_stats_non_admin_forbidden(client, regular_user):
+    token = await _login(client, "user@example.com", "UserPass1!")
+    resp = await client.get(
+        "/api/v1/queues/stats",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 403

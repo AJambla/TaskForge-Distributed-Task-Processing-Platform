@@ -30,6 +30,18 @@ class RabbitMQPublisher:
         self._channel: aio_pika.Channel | None = None
         self._exchange: aio_pika.Exchange | None = None
 
+    @property
+    def connection(self) -> aio_pika.Connection | None:
+        return self._connection
+
+    @property
+    def channel(self) -> aio_pika.Channel | None:
+        return self._channel
+
+    @property
+    def exchange(self) -> aio_pika.Exchange | None:
+        return self._exchange
+
     async def connect(self) -> None:
         """Establish connection, channel, and declare the main exchange."""
         settings = get_settings()
@@ -38,7 +50,10 @@ class RabbitMQPublisher:
             timeout=10,
         )
         self._channel = await self._connection.channel()
-        await self._channel.set_qos(prefetch_count=100)
+        # prefetch == per-worker concurrency limit: the broker never hands a
+        # worker more unacked messages than it will execute at once, so
+        # surplus work stays in the queue for other workers.
+        await self._channel.set_qos(prefetch_count=settings.worker_concurrency)
 
         self._exchange = await self._channel.declare_exchange(
             EXCHANGE_NAME,

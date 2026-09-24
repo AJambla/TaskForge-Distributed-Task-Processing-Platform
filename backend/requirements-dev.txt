@@ -1,0 +1,5 @@
+# Local development-only dependencies (bare-metal). Not used in production images.
+# Install on top of backend/requirements.txt.
+
+debugpy==1.8.9        # IDE attach / breakpoint debugging for api + worker + scheduler
+watchdog==6.0.0       # `watchmedo auto-restart` -> hot-reload for worker/scheduler (non-ASGI)

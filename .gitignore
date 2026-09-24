@@ -31,6 +31,10 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
+# Local dev overrides (per-machine; paired with scripts/dev + docker-compose.override.yml)
+*.local.yml
+monitoring/prometheus.local.yml
+
 # Logs
 *.log
 

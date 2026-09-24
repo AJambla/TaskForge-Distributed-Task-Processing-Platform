@@ -94,3 +94,27 @@ export interface ErrorDetail {
 export interface ErrorResponse {
   error: ErrorDetail;
 }
+
+export interface Worker {
+  id: string;
+  hostname: string;
+  status: string;
+  concurrency_limit: number;
+  current_task_count: number;
+  last_heartbeat_at: string;
+  tasks_processed: number;
+  tasks_failed: number;
+  registered_at: string;
+}
+
+export interface WorkerDetail extends Worker {
+  recent_attempts: TaskAttempt[];
+}
+
+export interface QueueMetrics {
+  task_type: string;
+  main_depth: number;
+  retry_depth: number;
+  dlq_depth: number;
+  total_depth: number;
+}
