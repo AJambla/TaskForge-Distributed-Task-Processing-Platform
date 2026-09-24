@@ -1,6 +1,7 @@
-"""Worker admin router — list workers, view worker detail with recent attempts.
+"""Worker router — list workers, view worker detail with recent attempts.
 
-Admin-only endpoints per Phase 8 spec.
+Read endpoints are available to any authenticated user: worker health is
+shared platform visibility.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.core.deps import AdminUser, DBSession
+from app.core.deps import CurrentUser, DBSession
 from app.models.worker_registration import WorkerRegistration
 from app.schemas.workers import TaskAttemptResponse, WorkerDetail, WorkerListItem
 
@@ -49,7 +50,7 @@ async def _mark_stale_workers_offline(db) -> None:
     summary="List all workers",
 )
 async def list_workers(
-    admin: AdminUser,
+    current_user: CurrentUser,
     db: DBSession,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -74,7 +75,7 @@ async def list_workers(
 )
 async def get_worker(
     worker_id: UUID,
-    admin: AdminUser,
+    current_user: CurrentUser,
     db: DBSession,
     limit: int = Query(10, ge=1, le=50, description="Number of recent attempts."),
 ) -> WorkerDetail:

@@ -14,6 +14,7 @@ import ApiKeys from "./pages/dashboard/ApiKeys";
 import Overview from "./pages/dashboard/Overview";
 import Queues from "./pages/dashboard/Queues";
 import Activity from "./pages/dashboard/Activity";
+import Settings from "./pages/dashboard/Settings";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient({
@@ -52,6 +53,7 @@ function App() {
               <Route path="metrics" element={<Metrics />} />
               <Route path="api-keys" element={<ApiKeys />} />
               <Route path="activity" element={<Activity />} />
+              <Route path="settings" element={<Settings />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

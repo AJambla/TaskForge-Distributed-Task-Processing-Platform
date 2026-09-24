@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, NavLink, Link, useLocation } from "react-router-dom";
 import {
   Activity,
   BarChart3,
+  ChevronUp,
   KeyRound,
   Layers,
   LayoutDashboard,
   ListChecks,
+  LogOut,
   Menu,
   Search,
   Server,
+  Settings,
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -28,10 +31,9 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/app/overview", label: "Overview", icon: LayoutDashboard },
   { to: "/app/tasks", label: "Tasks", icon: ListChecks },
-  { to: "/app/queues", label: "Queues", icon: Layers, admin: true },
-  { to: "/app/workers", label: "Workers", icon: Server, admin: true },
+  { to: "/app/queues", label: "Queues", icon: Layers },
+  { to: "/app/workers", label: "Workers", icon: Server },
   { to: "/app/metrics", label: "Metrics", icon: BarChart3, admin: true },
-  { to: "/app/api-keys", label: "API Keys", icon: KeyRound },
   { to: "/app/activity", label: "Activity", icon: Activity },
 ];
 
@@ -39,13 +41,27 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const isAdmin = user?.role === "admin";
   const items = NAV.filter((n) => !n.admin || isAdmin);
+  const footRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMenuOpen(false);
+    setProfileOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (footRef.current && !footRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [profileOpen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -95,24 +111,42 @@ export default function Layout() {
         ))}
       </nav>
 
-      <div className="sidenav__foot">
-        <div className="sidenav__user">
+      <div className="sidenav__foot" ref={footRef}>
+        {profileOpen && (
+          <div className="profile-menu" role="menu">
+            <Link to="/app/api-keys" className="profile-menu__item" role="menuitem">
+              <KeyRound size={14} /> API Keys
+            </Link>
+            <Link to="/app/settings" className="profile-menu__item" role="menuitem">
+              <Settings size={14} /> Settings
+            </Link>
+            <button className="profile-menu__item profile-menu__item--danger" role="menuitem" onClick={logout}>
+              <LogOut size={14} /> Sign out
+            </button>
+          </div>
+        )}
+        <button
+          className="sidenav__user sidenav__user--btn"
+          onClick={() => setProfileOpen((o) => !o)}
+          aria-haspopup="menu"
+          aria-expanded={profileOpen}
+        >
           <span className="sidenav__avatar" aria-hidden>
             {(user?.email || "?").slice(0, 1).toUpperCase()}
           </span>
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1 text-left">
             <span className="sidenav__user-email truncate block">{user?.email || "Signed in"}</span>
             <span className="sidenav__user-role">{user?.role ?? "user"}</span>
           </span>
-        </div>
-        <div className="sidenav__foot-links">
-          <Link to="/" className="navlink !text-xs">
-            Landing
-          </Link>
-          <button className="sidenav__signout" onClick={logout}>
-            Sign out
-          </button>
-        </div>
+          <ChevronUp
+            size={14}
+            style={{
+              color: "var(--subtle)",
+              transition: "transform 0.2s var(--ease)",
+              transform: profileOpen ? "rotate(180deg)" : undefined,
+            }}
+          />
+        </button>
       </div>
     </>
   );

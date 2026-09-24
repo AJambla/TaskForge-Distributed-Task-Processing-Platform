@@ -1,6 +1,7 @@
 """Queue metrics router — query RabbitMQ queue depths via management API.
 
-Admin-only endpoint per Phase 8 spec.
+Read endpoints are available to any authenticated user: queue backlog is
+shared platform visibility.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter
 from sqlalchemy import extract, func, select
 
-from app.core.deps import AdminUser, DBSession
+from app.core.deps import CurrentUser, DBSession
 from app.core.rabbitmq import get_queue_depths
 from app.models.task import Task
 
@@ -24,7 +25,7 @@ router = APIRouter()
     summary="Get queue depth metrics",
 )
 async def get_queues(
-    admin: AdminUser,
+    current_user: CurrentUser,
 ) -> dict:
     """Return per-queue message depths for all taskforge queues."""
     depths = await get_queue_depths()
@@ -70,7 +71,7 @@ async def get_queues(
     summary="Get aggregate queue/system stats",
 )
 async def get_stats(
-    admin: AdminUser,
+    current_user: CurrentUser,
     db: DBSession,
 ) -> dict:
     """Status counts, recent throughput, and latency averages for the dashboard."""

@@ -1447,6 +1447,58 @@ html {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+}
+
+.profile-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgba(10, 10, 10, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+  animation: fade-up 0.18s var(--ease) both;
+}
+
+.profile-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.profile-menu__item:hover {
+  background: var(--brand-tint);
+  color: var(--brand-deep);
+}
+
+.profile-menu__item--danger:hover {
+  background: rgba(185, 28, 28, 0.06);
+  color: #b91c1c;
+}
+
+.sidenav__user--btn {
+  width: 100%;
+  cursor: pointer;
+  border: 1px solid transparent;
+  padding: 4px;
+  text-align: left;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+
+.sidenav__user--btn:hover {
+  border-color: var(--line);
+  background: var(--app-bg);
 }
 
 .sidenav__user {
@@ -1487,23 +1539,6 @@ html {
   color: var(--subtle);
 }
 
-.sidenav__foot-links {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-}
-
-.sidenav__signout {
-  font-size: 12px;
-  color: var(--subtle);
-  transition: color 0.2s var(--ease);
-}
-
-.sidenav__signout:hover {
-  color: #b91c1c;
-}
-
 .console__body {
   flex: 1;
   min-width: 0;
@@ -1524,6 +1559,13 @@ html {
   -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--line);
+}
+
+/* Unlayered display:flex beats Tailwind's lg:hidden utility, so hide the topbar explicitly on desktop. */
+@media (min-width: 1024px) {
+  .console__topbar {
+    display: none;
+  }
 }
 
 .console__main {

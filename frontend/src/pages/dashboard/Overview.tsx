@@ -116,11 +116,6 @@ export default function Overview() {
                 <Plus size={14} /> Submit Task
               </span>
             </Link>
-            <Link to="/app/api-keys" className="btn btn--ghost-dark btn--sm">
-              <span className="btn__label inline-flex items-center gap-2">
-                <KeyRound size={14} /> Create API Key
-              </span>
-            </Link>
             <Link to="/app/activity" className="btn btn--ghost-dark btn--sm">
               <span className="btn__label inline-flex items-center gap-2">
                 <FileText size={14} /> View Activity

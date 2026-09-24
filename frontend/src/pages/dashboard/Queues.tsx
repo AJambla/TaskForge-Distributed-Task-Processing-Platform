@@ -4,20 +4,13 @@ import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
 import StatCard from "../../components/ui/StatCard";
 import { BarRow } from "../../components/ui/Charts";
-import { useAuth } from "../../context/AuthContext";
 import { useQueueStats, useQueues } from "../../api/queries";
 import { formatNumber, formatSeconds, relativeTime } from "../../lib/format";
 import { EmptyState } from "../../components/ui/Field";
 
-const isForbidden = (error: unknown) =>
-  (error as { response?: { status?: number } })?.response?.status === 403;
-
 export default function Queues() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
-
-  const queuesQuery = useQueues(isAdmin);
-  const statsQuery = useQueueStats(isAdmin);
+  const queuesQuery = useQueues();
+  const statsQuery = useQueueStats();
 
   const totals = useMemo(() => {
     const queues = queuesQuery.data ?? [];
@@ -29,21 +22,6 @@ export default function Queues() {
       max: Math.max(1, ...queues.map((q) => Math.max(q.main_depth, q.retry_depth, q.dlq_depth))),
     };
   }, [queuesQuery.data]);
-
-  if (!isAdmin || isForbidden(queuesQuery.error) || isForbidden(statsQuery.error)) {
-    return (
-      <div>
-        <PageHeader title="Queues" subtitle="Live RabbitMQ depths per task type" />
-        <Panel delay={0.08}>
-          <EmptyState
-            icon={<Layers size={22} />}
-            title="Queue visibility is restricted to admins."
-            hint="Your own task statuses are on the Tasks and Overview pages."
-          />
-        </Panel>
-      </div>
-    );
-  }
 
   const stats = statsQuery.data;
   const queues = queuesQuery.data ?? [];
