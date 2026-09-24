@@ -31,6 +31,18 @@ const LINKS = [
 
 const d = (s: string) => ({ "--d": s } as React.CSSProperties);
 
+function onHashClick(e: React.MouseEvent<HTMLAnchorElement>) {
+  const href = e.currentTarget.getAttribute("href") || "";
+  if (!href.startsWith("#")) return;
+  const target = document.querySelector(href);
+  if (!target) return;
+  e.preventDefault();
+  target.scrollIntoView({
+    behavior: document.visibilityState === "hidden" ? "auto" : "smooth",
+  });
+  history.replaceState(null, "", href);
+}
+
 function Reveal({
   children,
   delay = 0,
@@ -187,6 +199,7 @@ export default function Landing() {
               <a
                 key={link.label}
                 href={link.href}
+                onClick={onHashClick}
                 className="navlink link-in"
                 style={d(`${0.02 + i * 0.06}s`)}
               >
@@ -225,7 +238,10 @@ export default function Landing() {
               key={link.label}
               href={link.href}
               className="mobile-link"
-              onClick={() => setMenuOpen(false)}
+              onClick={(e) => {
+                onHashClick(e);
+                setMenuOpen(false);
+              }}
             >
               {link.label}
             </a>
@@ -379,7 +395,9 @@ export default function Landing() {
               <ul>
                 {LINKS.map((link) => (
                   <li key={link.label}>
-                    <a href={link.href}>{link.label}</a>
+                    <a href={link.href} onClick={onHashClick}>
+                      {link.label}
+                    </a>
                   </li>
                 ))}
               </ul>
@@ -399,20 +417,26 @@ export default function Landing() {
               <h3>Task types</h3>
               <ul>
                 <li>
-                  <a href="#platform">Email sending</a>
+                  <a href="#platform" onClick={onHashClick}>
+                    Email sending
+                  </a>
                 </li>
                 <li>
-                  <a href="#platform">Image resizing</a>
+                  <a href="#platform" onClick={onHashClick}>
+                    Image resizing
+                  </a>
                 </li>
                 <li>
-                  <a href="#platform">Webhook delivery</a>
+                  <a href="#platform" onClick={onHashClick}>
+                    Webhook delivery
+                  </a>
                 </li>
               </ul>
             </div>
           </div>
           <div className="site-footer__bottom">
             <span>© 2026 TaskForge. Built for engineering teams.</span>
-            <a href="#top" className="navlink !text-xs">
+            <a href="#top" className="navlink !text-xs" onClick={onHashClick}>
               Back to top ↑
             </a>
           </div>
