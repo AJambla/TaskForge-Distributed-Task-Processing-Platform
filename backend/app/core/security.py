@@ -11,15 +11,17 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from jose import jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
 
 settings = get_settings()
 
 # bcrypt password hashing — per SECURITY.md
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# passlib is unmaintained and breaks with bcrypt>=4.1, so call bcrypt directly.
+# Hash format ($2b$) is unchanged; existing hashes still verify.
+_BCRYPT_MAX_PASSWORD_BYTES = 72
 
 # API key prefix per API.md
 API_KEY_PREFIX = "tf_live_"
@@ -30,12 +32,23 @@ API_KEY_BYTES = 32  # 32 bytes = 64 hex chars of entropy
 
 def hash_password(password: str) -> str:
     """Hash a plaintext password with bcrypt."""
-    return pwd_context.hash(password)
+    secret = password.encode("utf-8")
+    if len(secret) > _BCRYPT_MAX_PASSWORD_BYTES:
+        raise ValueError(
+            f"Password exceeds the {_BCRYPT_MAX_PASSWORD_BYTES}-byte bcrypt limit"
+        )
+    return bcrypt.hashpw(secret, bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against a bcrypt hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+        )
+    except ValueError:
+        # Over-long passwords could never have been stored — no match.
+        return False
 
 
 # ─── API Key helpers ─────────────────────────────────────────────────────────

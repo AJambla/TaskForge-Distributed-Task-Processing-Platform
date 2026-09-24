@@ -1,49 +1,108 @@
-"""Unit tests for rate limiting logic."""
+"""Unit tests for rate limiting logic — no live Redis or Postgres required."""
+from __future__ import annotations
+
 import pytest
-import pytest_asyncio
+from fastapi import HTTPException
 
-from app.core.rate_limit import RATE_LIMIT_WINDOW_SECONDS, RateLimiter
-
-
-@pytest.mark.asyncio
-async def test_rate_limiter_allows_within_limit(db_session, monkeypatch):
-    from app.core.redis import get_redis
-    import redis.asyncio as redis
-
-    fake_client = redis.from_url("redis://localhost:6379/0")
-    monkeypatch.setattr("app.core.redis._client", fake_client)
-
-    limiter = RateLimiter(limit=5)
-    # This test verifies the RateLimiter class is instantiable and callable.
-    # Full integration against Redis is tested in integration tests.
-    assert limiter.limit == 5
+from app.core import redis as redis_module
+from app.core.rate_limit import RATE_LIMIT_WINDOW_SECONDS, make_rate_limiter
 
 
-@pytest.mark.asyncio
-async def test_rate_limit_counter_increments():
+class FakeRedis:
+    """Minimal async Redis stand-in covering the commands used by rate limiting."""
+
+    def __init__(self):
+        self.store: dict[str, str] = {}
+        self.expirations: list[tuple[str, int]] = []
+
+    async def incr(self, key: str) -> int:
+        self.store[key] = str(int(self.store.get(key, "0")) + 1)
+        return int(self.store[key])
+
+    async def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        self.expirations.append((key, seconds))
+        return True
+
+
+@pytest.fixture
+def fake_redis(monkeypatch) -> FakeRedis:
+    client = FakeRedis()
+    monkeypatch.setattr(redis_module, "_client", client)
+    return client
+
+
+class FakeRequest:
+    def __init__(self, headers: dict | None = None):
+        self.method = "POST"
+        self.headers = headers or {}
+        self.client = None
+
+
+async def test_window_constant():
+    assert RATE_LIMIT_WINDOW_SECONDS == 60
+
+
+async def test_allows_requests_within_limit(fake_redis):
+    limiter = make_rate_limiter(limit=3)
+    token = "tok-abcdefghijk1234"
+    request = FakeRequest({"authorization": f"Bearer {token}"})
+
+    for _ in range(3):
+        await limiter(request)
+
+    assert await fake_redis.get(f"ratelimit:auth:{token[:16]}:60") == "3"
+
+
+async def test_raises_429_over_limit(fake_redis):
+    limiter = make_rate_limiter(limit=2)
+    request = FakeRequest()
+
+    await limiter(request)
+    await limiter(request)
+    with pytest.raises(HTTPException) as exc_info:
+        await limiter(request)
+
+    assert exc_info.value.status_code == 429
+    assert exc_info.value.detail["error"]["code"] == "RATE_LIMITED"
+
+
+async def test_api_key_and_bearer_use_separate_counters(fake_redis):
+    limiter = make_rate_limiter(limit=5)
+    token = "tok-abcdefghijk1234"
+    bearer_request = FakeRequest({"authorization": f"Bearer {token}"})
+    api_key_request = FakeRequest()
+
+    await limiter(bearer_request)
+    await limiter(api_key_request, api_key_header="tf_live_key123")
+
+    assert await fake_redis.get(f"ratelimit:auth:{token[:16]}:60") == "1"
+    assert await fake_redis.get("ratelimit:tf_live_key123:60") == "1"
+
+
+async def test_options_requests_skip_rate_limiting(fake_redis):
+    limiter = make_rate_limiter(limit=1)
+    request = FakeRequest()
+    request.method = "OPTIONS"
+
+    for _ in range(5):
+        await limiter(request)
+
+    assert fake_redis.store == {}
+
+
+async def test_counter_sets_ttl_only_on_first_increment(fake_redis):
     from app.core.redis import increment_rate_limit_counter
-    import redis.asyncio as redis
 
-    client = redis.from_url("redis://localhost:6379/0")
-    try:
-        await client.delete("ratelimit:test:unit:60")
-        count1 = await increment_rate_limit_counter("ratelimit:test:unit:60", 10, 60)
-        assert count1 == 1
-        count2 = await increment_rate_limit_counter("ratelimit:test:unit:60", 10, 60)
-        assert count2 == 2
-    finally:
-        await client.delete("ratelimit:test:unit:60")
+    key = "ratelimit:unit:60"
+    assert await increment_rate_limit_counter(key, 10, 60) == 1
+    assert await increment_rate_limit_counter(key, 10, 60) == 2
+    assert fake_redis.expirations == [(key, 60)]
 
 
-@pytest.mark.asyncio
-async def test_rate_limit_count_zero_when_missing():
+async def test_get_rate_limit_count_zero_when_missing(fake_redis):
     from app.core.redis import get_rate_limit_count
-    import redis.asyncio as redis
 
-    client = redis.from_url("redis://localhost:6379/0")
-    try:
-        await client.delete("ratelimit:test:missing:60")
-        count = await get_rate_limit_count("ratelimit:test:missing:60")
-        assert count == 0
-    finally:
-        await client.delete("ratelimit:test:missing:60")
+    assert await get_rate_limit_count("ratelimit:missing:60") == 0

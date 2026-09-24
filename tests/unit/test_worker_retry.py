@@ -13,12 +13,6 @@ import pytest
 from app.worker import main as worker_main
 
 
-@pytest.fixture(autouse=True)
-def setup_and_teardown_db():
-    """Override the DB-backed autouse fixture from tests/conftest.py."""
-    yield
-
-
 class FakeMessage:
     def __init__(self, task_id: str = "task-1", task_type: str = "email_send"):
         self.body = task_id.encode("utf-8")
