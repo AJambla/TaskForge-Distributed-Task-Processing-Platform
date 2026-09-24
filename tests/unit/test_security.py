@@ -22,12 +22,16 @@ def test_password_hash_and_verify():
 
 
 def test_password_strength_validation():
-    assert validate_password_strength("short") == ["Password must be at least 8 characters long."]
+    assert validate_password_strength("short") == [
+        "Password must be at least 8 characters long.",
+        "Password must contain at least one uppercase letter.",
+        "Password must contain at least one digit.",
+    ]
     assert validate_password_strength("nouppernum") == [
         "Password must contain at least one uppercase letter.",
         "Password must contain at least one digit.",
     ]
-    assert validate_password_strength("NoLower1!") == [
+    assert validate_password_strength("N0LOWERCASE1!") == [
         "Password must contain at least one lowercase letter."
     ]
     assert validate_password_strength("ProperPass1!") == []
@@ -52,7 +56,7 @@ def test_jwt_invalid_token():
 def test_api_key_generation():
     raw, key_hash, prefix = generate_api_key()
     assert raw.startswith("tf_live_")
-    assert len(raw) == 12 + 64  # prefix + 32 bytes hex
+    assert len(raw) == 8 + 64  # "tf_live_" prefix + 32 bytes hex
     assert prefix == raw[:12]
     assert hash_api_key(raw) == key_hash
 
