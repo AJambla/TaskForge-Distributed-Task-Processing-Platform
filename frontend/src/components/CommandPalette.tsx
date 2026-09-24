@@ -10,6 +10,7 @@ import {
   ListChecks,
   Search,
   Server,
+  Settings,
 } from "lucide-react";
 import client from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -35,11 +36,12 @@ interface Result {
 const PAGES: Array<{ label: string; to: string; icon: React.ReactNode; admin?: boolean }> = [
   { label: "Overview", to: "/app/overview", icon: <LayoutDashboard size={15} /> },
   { label: "Tasks", to: "/app/tasks", icon: <ListChecks size={15} /> },
-  { label: "Queues", to: "/app/queues", icon: <Layers size={15} />, admin: true },
-  { label: "Workers", to: "/app/workers", icon: <Server size={15} />, admin: true },
+  { label: "Queues", to: "/app/queues", icon: <Layers size={15} /> },
+  { label: "Workers", to: "/app/workers", icon: <Server size={15} /> },
   { label: "Metrics", to: "/app/metrics", icon: <BarChart3 size={15} />, admin: true },
   { label: "API Keys", to: "/app/api-keys", icon: <KeyRound size={15} /> },
   { label: "Activity", to: "/app/activity", icon: <Activity size={15} /> },
+  { label: "Settings", to: "/app/settings", icon: <Settings size={15} /> },
 ];
 
 export default function CommandPalette({ open, onClose }: CommandPaletteProps) {

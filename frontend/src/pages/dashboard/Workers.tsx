@@ -78,10 +78,7 @@ function WorkerCard({ worker, delay }: { worker: Worker; delay: number }) {
 }
 
 export default function Workers() {
-  const { data, isLoading, error } = useWorkers(true);
-
-  const isForbidden =
-    (error as { response?: { status?: number } })?.response?.status === 403;
+  const { data, isLoading } = useWorkers();
 
   const online = data?.filter((w) => w.status === "online").length ?? 0;
   const capacity = data?.reduce((s, w) => s + w.concurrency_limit, 0) ?? 0;
@@ -100,11 +97,7 @@ export default function Workers() {
         }
       />
 
-      {isForbidden ? (
-        <Panel delay={0.08}>
-          <EmptyState icon={<Server size={22} />} title="Worker visibility is restricted to admins." />
-        </Panel>
-      ) : isLoading ? (
+      {isLoading ? (
         <PageLoading />
       ) : !data?.length ? (
         <Panel delay={0.08}>
