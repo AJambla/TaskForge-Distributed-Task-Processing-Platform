@@ -6,6 +6,7 @@ causing an endless re-delivery loop.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -140,5 +141,5 @@ async def test_future_run_at_task_is_deferred_via_retry_ttl(env):
     publisher._exchange.publish.assert_awaited_once()
     args, kwargs = publisher._exchange.publish.await_args
     assert kwargs["routing_key"] == "tasks.email_send.retry"
-    assert args[0].expiration == "120000"
+    assert args[0].expiration == timedelta(milliseconds=120000)
     msg.ack.assert_awaited_once()

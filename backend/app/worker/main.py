@@ -13,7 +13,7 @@ import signal
 import socket
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -358,7 +358,7 @@ async def _publish_retry(
             "x-task-type": task_type,
             "x-task-id": task_id,
         },
-        expiration=str(delay * 1000),
+        expiration=timedelta(milliseconds=delay * 1000),
     )
     await publisher._exchange.publish(
         message,
