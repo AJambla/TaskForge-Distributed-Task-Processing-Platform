@@ -81,3 +81,44 @@ async def test_admin_sees_all_tasks(client, admin_user, regular_user):
         headers={"Authorization": f"Bearer {user_token}"},
     )
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_retry_rolls_back_when_publish_fails(
+    client, regular_user, db_session, monkeypatch
+):
+    """A failed re-publish must not leave the task stranded in 'queued'."""
+    from uuid import uuid4
+
+    from sqlalchemy import select
+
+    from app.models.task import Task
+
+    task = Task(
+        id=uuid4(),
+        user_id=regular_user.id,
+        task_type="email_send",
+        payload={"to": "x@example.com", "subject": "s", "body": "b"},
+        status="dead_letter",
+        attempt_count=3,
+        max_attempts=3,
+    )
+    db_session.add(task)
+    await db_session.commit()
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr("app.routers.tasks.publish_task", _boom)
+
+    token = await _login(client, "user@example.com", "UserPass1!")
+    resp = await client.post(
+        f"/api/v1/tasks/{task.id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 503
+
+    result = await db_session.execute(select(Task).where(Task.id == task.id))
+    stored = result.scalar_one()
+    assert stored.status == "dead_letter"
+    assert stored.attempt_count == 3
