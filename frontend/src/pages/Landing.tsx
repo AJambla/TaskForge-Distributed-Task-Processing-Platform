@@ -16,7 +16,7 @@ import {
   Ban,
   BarChart3,
 } from "lucide-react";
-import { LogoMark } from "../components/ui/Logo";
+import { LogoMark, default as Logo } from "../components/ui/Logo";
 import { ButtonLink } from "../components/ui/Button";
 import StatusPill from "../components/ui/StatusPill";
 
@@ -208,11 +208,9 @@ export default function Landing() {
             ))}
           </nav>
 
-          <Link to="/" className="landing__logo" aria-label="TaskForge">
-            <LogoMark width={36} />
+          <Link to="/" className="landing__logo" aria-label="TaskForge home">
+            <Logo width={34} />
           </Link>
-
-          <div className="landing__cta" />
 
           <button
             className="burger landing__burger link-in"

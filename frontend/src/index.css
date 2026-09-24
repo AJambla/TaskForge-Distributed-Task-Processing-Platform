@@ -863,7 +863,7 @@ select.field__input {
 
 .landing__nav {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr auto;
   align-items: center;
 }
 
@@ -872,12 +872,8 @@ select.field__input {
 }
 
 .landing__logo {
-  justify-self: center;
-  display: inline-flex;
-}
-
-.landing__cta {
   justify-self: end;
+  display: inline-flex;
 }
 
 .landing__burger {
@@ -1248,11 +1244,10 @@ html {
   }
 
   .landing__nav {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr;
   }
 
-  .landing__nav-links,
-  .landing__cta {
+  .landing__nav-links {
     display: none;
   }
 
