@@ -1,62 +1,101 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import client from "../../api/client";
-import type { Worker } from "../../types";
+import { CheckCircle2, Cpu, Server, Zap } from "lucide-react";
 import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
+import StatCard from "../../components/ui/StatCard";
 import { PageLoading, EmptyState } from "../../components/ui/Field";
 import StatusPill from "../../components/ui/StatusPill";
-import { Server } from "lucide-react";
-
-function relativeTime(iso: string): string {
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  return `${Math.floor(seconds / 3600)}h ago`;
-}
+import { useWorkers } from "../../api/queries";
+import { relativeTime } from "../../lib/format";
+import type { Worker } from "../../types";
 
 function LoadBar({ current, limit }: { current: number; limit: number }) {
   const pct = limit > 0 ? Math.min(100, (current / limit) * 100) : 0;
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-[6px] w-24" style={{ background: "var(--line)" }}>
-        <div
-          className="h-full"
+    <div className="wk-load">
+      <span className="wk-load__track">
+        <span
+          className="wk-load__fill"
           style={{
             width: `${pct}%`,
             background: pct >= 90 ? "#b91c1c" : "var(--brand)",
-            transition: "width 0.4s cubic-bezier(0.16,1,0.3,1)",
           }}
         />
-      </div>
-      <span className="mono text-xs" style={{ color: "var(--subtle)" }}>
+      </span>
+      <span className="mono wk-load__text">
         {current}/{limit}
       </span>
     </div>
   );
 }
 
+function heartbeatTone(iso: string): "fresh" | "stale" | "dead" {
+  const age = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (age < 60) return "fresh";
+  if (age < 180) return "stale";
+  return "dead";
+}
+
+function WorkerCard({ worker, delay }: { worker: Worker; delay: number }) {
+  const total = worker.tasks_processed + worker.tasks_failed;
+  const rate = total > 0 ? ((worker.tasks_processed / total) * 100).toFixed(1) : null;
+  const tone = heartbeatTone(worker.last_heartbeat_at);
+
+  return (
+    <div className="wk-card rise" style={{ "--d": `${delay}s` } as React.CSSProperties}>
+      <div className="wk-card__head">
+        <Link to={`/app/workers/${worker.id}`} className="wk-card__name navlink">
+          {worker.hostname}
+        </Link>
+        <StatusPill status={worker.status} />
+      </div>
+      <LoadBar current={worker.current_task_count} limit={worker.concurrency_limit} />
+      <div className="wk-card__grid">
+        <div>
+          <p className="wk-card__label">Processed</p>
+          <p className="wk-card__value mono">{worker.tasks_processed.toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="wk-card__label">Failed</p>
+          <p
+            className="wk-card__value mono"
+            style={{ color: worker.tasks_failed > 0 ? "#b91c1c" : undefined }}
+          >
+            {worker.tasks_failed.toLocaleString()}
+          </p>
+        </div>
+        <div>
+          <p className="wk-card__label">Success</p>
+          <p className="wk-card__value mono">{rate ? `${rate}%` : "—"}</p>
+        </div>
+      </div>
+      <p className="wk-card__beat">
+        <span className={`wk-dot is-${tone}`} aria-hidden />
+        heartbeat {relativeTime(worker.last_heartbeat_at)}
+      </p>
+    </div>
+  );
+}
+
 export default function Workers() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["workers"],
-    queryFn: async () => {
-      const response = await client.get("/workers");
-      return response.data as Worker[];
-    },
-    refetchInterval: 5000,
-  });
+  const { data, isLoading, error } = useWorkers(true);
 
   const isForbidden =
     (error as { response?: { status?: number } })?.response?.status === 403;
 
+  const online = data?.filter((w) => w.status === "online").length ?? 0;
+  const capacity = data?.reduce((s, w) => s + w.concurrency_limit, 0) ?? 0;
+  const busy = data?.reduce((s, w) => s + w.current_task_count, 0) ?? 0;
+  const processed = data?.reduce((s, w) => s + w.tasks_processed, 0) ?? 0;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Workers"
         subtitle={
           <span className="inline-flex items-center gap-2">
             <span className="chip-dot" style={{ color: "var(--brand)" }} aria-hidden />
-            Live worker pool status, refreshed every 5 seconds
+            Live worker pool health, refreshed every 5 seconds
           </span>
         }
       />
@@ -69,49 +108,45 @@ export default function Workers() {
         <PageLoading />
       ) : !data?.length ? (
         <Panel delay={0.08}>
-          <EmptyState icon={<Server size={22} />} title="No workers have registered yet" />
+          <EmptyState
+            icon={<Server size={22} />}
+            title="No workers have registered yet"
+            hint="Start a worker process and it will appear here within seconds."
+          />
         </Panel>
       ) : (
-        <Panel bodyClassName="overflow-x-auto" delay={0.08}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Hostname</th>
-                <th>Status</th>
-                <th>Load</th>
-                <th>Processed</th>
-                <th>Failed</th>
-                <th>Last Heartbeat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((worker) => (
-                <tr key={worker.id}>
-                  <td>
-                    <Link
-                      to={`/app/workers/${worker.id}`}
-                      className="navlink font-medium"
-                      style={{ fontSize: 14 }}
-                    >
-                      {worker.hostname}
-                    </Link>
-                  </td>
-                  <td>
-                    <StatusPill status={worker.status} />
-                  </td>
-                  <td>
-                    <LoadBar current={worker.current_task_count} limit={worker.concurrency_limit} />
-                  </td>
-                  <td className="mono text-sm">{worker.tasks_processed}</td>
-                  <td className="mono text-sm" style={{ color: worker.tasks_failed > 0 ? "#b91c1c" : undefined }}>
-                    {worker.tasks_failed}
-                  </td>
-                  <td style={{ color: "var(--subtle)" }}>{relativeTime(worker.last_heartbeat_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
+        <>
+          <div className="ov-stats">
+            <StatCard
+              label="Online"
+              value={`${online} / ${data.length}`}
+              icon={<CheckCircle2 size={14} />}
+              accent="#067647"
+              delay={0.05}
+            />
+            <StatCard
+              label="Capacity in use"
+              value={`${busy} / ${capacity}`}
+              icon={<Zap size={14} />}
+              sub="concurrent slots occupied"
+              delay={0.1}
+            />
+            <StatCard
+              label="Tasks processed"
+              value={processed.toLocaleString()}
+              icon={<Cpu size={14} />}
+              sub="lifetime across pool"
+              accent="#6d28d9"
+              delay={0.15}
+            />
+          </div>
+
+          <div className="wk-grid">
+            {data.map((w, i) => (
+              <WorkerCard key={w.id} worker={w} delay={0.2 + i * 0.05} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

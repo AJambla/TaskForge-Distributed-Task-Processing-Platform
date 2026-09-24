@@ -2309,3 +2309,116 @@ html {
 .tsk-running {
   color: #b45309;
 }
+
+/* ---------- worker health cards ---------- */
+
+.wk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.wk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
+}
+
+.wk-card:hover {
+  border-color: rgba(0, 108, 210, 0.35);
+  box-shadow: var(--shadow-1);
+}
+
+.wk-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wk-card__name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.wk-load {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wk-load__track {
+  flex: 1;
+  height: 8px;
+  background: rgba(10, 10, 10, 0.06);
+  display: block;
+  overflow: hidden;
+}
+
+.wk-load__fill {
+  display: block;
+  height: 100%;
+  transition: width 0.4s var(--ease);
+}
+
+.wk-load__text {
+  font-size: 11px;
+  color: var(--subtle);
+  min-width: 38px;
+  text-align: right;
+}
+
+.wk-card__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.wk-card__label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--subtle);
+}
+
+.wk-card__value {
+  margin-top: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wk-card__beat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--subtle);
+}
+
+.wk-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+}
+
+.wk-dot.is-fresh {
+  background: #067647;
+}
+
+.wk-dot.is-stale {
+  background: #d97706;
+}
+
+.wk-dot.is-dead {
+  background: #b91c1c;
+}
