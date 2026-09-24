@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import selectinload
 
 from app.core.deps import AdminUser, DBSession
 from app.models.worker_registration import WorkerRegistration
@@ -58,7 +58,7 @@ async def get_worker(
     result = await db.execute(
         select(WorkerRegistration)
         .where(WorkerRegistration.id == worker_id)
-        .options(joinedload(WorkerRegistration.attempts))
+        .options(selectinload(WorkerRegistration.attempts))
     )
     worker = result.scalar_one_or_none()
     if not worker:
