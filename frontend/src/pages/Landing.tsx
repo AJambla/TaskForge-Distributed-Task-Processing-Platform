@@ -359,22 +359,6 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ---------- CTA band ---------- */}
-      <section className="cta-band">
-        <div className="cta-band__inner">
-          <Reveal>
-            <h2 className="cta-band__title">
-              Ready to give every job <em>a reliable queue?</em>
-            </h2>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <ButtonLink to="/login" variant="light" withIcon>
-              Launch Console
-            </ButtonLink>
-          </Reveal>
-        </div>
-      </section>
-
       {/* ---------- Footer ---------- */}
       <footer className="site-footer">
         <div className="site-footer__inner">

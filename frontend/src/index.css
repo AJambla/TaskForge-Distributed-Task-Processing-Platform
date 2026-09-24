@@ -1111,37 +1111,6 @@ html {
   font-size: 14px;
 }
 
-/* CTA band */
-
-.cta-band {
-  background: var(--text);
-  color: #fff;
-}
-
-.cta-band__inner {
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: clamp(56px, 8vw, 88px) clamp(20px, 3.52vw, 64px);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 28px;
-}
-
-.cta-band__title {
-  font-size: clamp(1.7rem, 3vw, 2.4rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  max-width: 560px;
-}
-
-.cta-band__title em {
-  font-style: normal;
-  color: var(--brand-pale);
-}
-
 /* footer */
 
 .site-footer {
