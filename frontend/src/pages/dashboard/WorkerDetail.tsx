@@ -2,13 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import client from "../../api/client";
 import type { WorkerDetail } from "../../types";
-import { Loader2, ArrowLeft } from "lucide-react";
-
-const outcomeStyles: Record<string, string> = {
-  success: "text-green-400",
-  failure: "text-red-400",
-  timeout: "text-orange-400",
-};
+import PageHeader from "../../components/ui/PageHeader";
+import Panel from "../../components/ui/Panel";
+import { PageLoading, EmptyState } from "../../components/ui/Field";
+import { Server, ChevronLeft } from "lucide-react";
 
 export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -28,137 +25,111 @@ export default function WorkerDetailPage() {
 
   if (isForbidden) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center text-slate-400">
-        <p>Worker visibility is restricted to admins.</p>
-      </div>
+      <Panel delay={0.05}>
+        <EmptyState icon={<Server size={22} />} title="Worker visibility is restricted to admins." />
+      </Panel>
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 size={32} className="text-indigo-500 animate-spin" />
-      </div>
-    );
-  }
+  if (isLoading) return <PageLoading />;
 
   if (!data) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center text-slate-400">
-        <p>Worker not found.</p>
-      </div>
+      <Panel delay={0.05}>
+        <EmptyState icon={<Server size={22} />} title="Worker not found." />
+      </Panel>
     );
   }
 
+  const stats = [
+    { label: "Status", value: data.status },
+    { label: "Load", value: `${data.current_task_count}/${data.concurrency_limit}` },
+    { label: "Tasks Processed", value: String(data.tasks_processed) },
+    { label: "Tasks Failed", value: String(data.tasks_failed) },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-8">
+      <div className="wipe" style={{ "--d": "0.02s" } as React.CSSProperties}>
         <Link
-          to="/workers"
-          className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-slate-100 mb-3"
+          to="/app/workers"
+          className="inline-flex items-center gap-1.5 text-sm"
+          style={{ color: "var(--subtle)" }}
         >
-          <ArrowLeft size={14} />
-          Back to workers
+          <ChevronLeft size={14} /> Back to workers
         </Link>
-        <h1 className="text-2xl font-semibold text-slate-100">
-          {data.hostname}
-        </h1>
-        <p className="text-slate-400 mt-1 text-sm">
-          {data.status} · registered {new Date(data.registered_at).toLocaleString()}
-        </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Status", value: data.status },
-          {
-            label: "Load",
-            value: `${data.current_task_count}/${data.concurrency_limit}`,
-          },
-          { label: "Tasks Processed", value: String(data.tasks_processed) },
-          { label: "Tasks Failed", value: String(data.tasks_failed) },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-slate-900 border border-slate-800 rounded-xl p-4"
-          >
-            <p className="text-xs text-slate-400 uppercase tracking-wider">
-              {stat.label}
-            </p>
-            <p className="text-xl font-semibold text-slate-100 mt-1">
-              {stat.value}
-            </p>
+      <PageHeader
+        title={data.hostname}
+        subtitle={`${data.status} · registered ${new Date(data.registered_at).toLocaleString()}`}
+      />
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {stats.map((s, i) => (
+          <div key={s.label} className="stat rise" style={{ "--d": `${0.1 + i * 0.06}s` } as React.CSSProperties}>
+            <p className="stat__label">{s.label}</p>
+            <p className="stat__value">{s.value}</p>
           </div>
         ))}
       </div>
 
-      <div>
-        <h2 className="text-lg font-semibold text-slate-100 mb-3">
-          Recent Attempts
-        </h2>
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          {!data.recent_attempts.length ? (
-            <p className="text-slate-400 text-center py-10">
-              No attempts recorded for this worker
-            </p>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-800 text-left">
-                  <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase">
-                    Task
-                  </th>
-                  <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase">
-                    Attempt
-                  </th>
-                  <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase">
-                    Outcome
-                  </th>
-                  <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase">
-                    Started
-                  </th>
-                  <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase">
-                    Error
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent_attempts.map((attempt) => (
-                  <tr
-                    key={attempt.id}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/30"
-                  >
-                    <td className="px-6 py-3 text-sm">
-                      <Link
-                        to={`/tasks/${attempt.task_id}`}
-                        className="text-indigo-400 hover:text-indigo-300"
-                      >
-                        {attempt.task_id.slice(0, 8)}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-300">
-                      #{attempt.attempt_number}
-                    </td>
-                    <td
-                      className={`px-6 py-3 text-sm font-medium ${
-                        outcomeStyles[attempt.outcome ?? ""] ?? "text-slate-400"
-                      }`}
+      <Panel title="Recent Attempts" delay={0.2} bodyClassName="overflow-x-auto">
+        {!data.recent_attempts.length ? (
+          <EmptyState title="No attempts recorded for this worker" />
+        ) : (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Task</th>
+                <th>Attempt</th>
+                <th>Outcome</th>
+                <th>Started</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.recent_attempts.map((attempt) => (
+                <tr key={attempt.id}>
+                  <td>
+                    <Link to={`/app/tasks/${attempt.task_id}`} className="navlink mono !text-xs">
+                      {attempt.task_id.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="mono text-xs">#{attempt.attempt_number}</td>
+                  <td>
+                    <span
+                      className="font-medium"
+                      style={{
+                        color:
+                          attempt.outcome === "success"
+                            ? "#067647"
+                            : attempt.outcome === "failure"
+                              ? "#b91c1c"
+                              : attempt.outcome === "timeout"
+                                ? "#c2410c"
+                                : "var(--subtle)",
+                      }}
                     >
                       {attempt.outcome ?? "running"}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-400">
-                      {new Date(attempt.started_at).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-red-400/80 max-w-xs truncate">
-                      {attempt.error_message ?? "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+                    </span>
+                  </td>
+                  <td style={{ color: "var(--subtle)" }}>
+                    {new Date(attempt.started_at).toLocaleString()}
+                  </td>
+                  <td
+                    className="block max-w-xs truncate"
+                    style={{ color: attempt.error_message ? "#b91c1c" : "var(--subtle)" }}
+                    title={attempt.error_message ?? undefined}
+                  >
+                    {attempt.error_message ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Panel>
     </div>
   );
 }
