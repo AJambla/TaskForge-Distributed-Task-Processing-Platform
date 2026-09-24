@@ -55,6 +55,10 @@ async def create_task(
     ),
 ) -> TaskResponse:
     """Submit a task for processing with idempotency protection."""
+    # Reject while backpressuring, before any state is written, so a 429
+    # never leaves a queued task row with no queued message.
+    await check_backpressure()
+
     idempotency_key = idempotency_key_header or body.idempotency_key
 
     if idempotency_key:
@@ -105,7 +109,6 @@ async def create_task(
     # Publish to RabbitMQ — if this fails, mark task as failed to avoid
     # a dangling 'queued' state with no message.
     try:
-        await check_backpressure()
         await publish_task(str(task.id), body.task_type.value)
     except Exception:
         logger.exception("Failed to publish task %s to RabbitMQ", task.id)
@@ -347,6 +350,10 @@ async def retry_task(
                 }
             },
         )
+    # Backpressure check before any mutation: a 429 must leave the task
+    # in its retryable state, not flip it to queued with no message.
+    await check_backpressure()
+
     task.status = TaskStatus.QUEUED.value
     task.attempt_count = 0
     task.started_at = None
@@ -357,7 +364,6 @@ async def retry_task(
 
     # Re-publish to RabbitMQ
     try:
-        await check_backpressure()
         await publish_task(str(task.id), task.task_type)
     except Exception:
         logger.exception("Failed to re-publish retried task %s", task.id)

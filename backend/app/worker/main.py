@@ -226,11 +226,13 @@ async def _set_worker_offline(db, worker_id) -> None:
 
 async def consume_task(
     db, task_id: str, task_type: str, worker_id=None
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, int | None]:
     """Process a single task.
 
     Returns:
-        (final_status, attempt_count, max_attempts)
+        (final_status, attempt_count, max_attempts, defer_seconds)
+        defer_seconds is set only for the "scheduled" status, telling the
+        caller how long until the task's future run_at comes due.
     """
     result = await db.execute(
         select(Task)
@@ -240,11 +242,21 @@ async def consume_task(
     task = result.scalar_one_or_none()
     if not task:
         logger.warning("Task %s not found in DB — skipping.", task_id)
-        return "not_found", 0, 0
+        return "not_found", 0, 0, None
 
     if task.status in ("cancelled", "succeeded"):
         logger.info("Task %s already terminal — skipping.", task_id)
-        return task.status, task.attempt_count, task.max_attempts
+        return task.status, task.attempt_count, task.max_attempts, None
+
+    if task.run_at and task.run_at > datetime.now(timezone.utc):
+        defer_seconds = int((task.run_at - datetime.now(timezone.utc)).total_seconds()) + 1
+        logger.info(
+            "Task %s scheduled for %s — deferring %ds.",
+            task_id,
+            task.run_at.isoformat(),
+            defer_seconds,
+        )
+        return "scheduled", task.attempt_count, task.max_attempts, defer_seconds
 
     task.status = "running"
     task.started_at = datetime.now(timezone.utc)
@@ -283,25 +295,27 @@ async def consume_task(
         task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_success(db, task, attempt, worker_id=worker_id)
         tasks_processed_total.labels(outcome="success", task_type=task_type).inc()
-        return "succeeded", task.attempt_count, max_attempts
+        return "succeeded", task.attempt_count, max_attempts, None
 
     except asyncio.TimeoutError as exc:
         elapsed = asyncio.get_event_loop().time() - start
         task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_failure(db, task, attempt, "timeout", exc, worker_id=worker_id)
         tasks_processed_total.labels(outcome="timeout", task_type=task_type).inc()
-        return "timeout", task.attempt_count, max_attempts
+        return "timeout", task.attempt_count, max_attempts, None
 
     except Exception as exc:
         elapsed = asyncio.get_event_loop().time() - start
         task_duration_seconds.labels(task_type=task_type).observe(elapsed)
         await _mark_failure(db, task, attempt, "failure", exc, worker_id=worker_id)
         tasks_processed_total.labels(outcome="failure", task_type=task_type).inc()
-        return "failed", task.attempt_count, max_attempts
+        return "failed", task.attempt_count, max_attempts, None
 
 
-async def _publish_retry(publisher, task_id: str, task_type: str, attempt_count: int) -> None:
-    delay = _calculate_retry_delay(attempt_count)
+async def _publish_retry(
+    publisher, task_id: str, task_type: str, delay_seconds: int
+) -> None:
+    delay = max(1, min(delay_seconds, 4_294_967))
     body = task_id.encode("utf-8")
     message = aio_pika.Message(
         body,
@@ -329,8 +343,8 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
     task_type = message.headers.get("x-task-type", "unknown")
     try:
         async with AsyncSessionLocal() as db:
-            final_status, attempt_count, max_attempts = await consume_task(
-                db, task_id, task_type, worker_id=worker_id
+            final_status, attempt_count, max_attempts, defer_seconds = (
+                await consume_task(db, task_id, task_type, worker_id=worker_id)
             )
 
         # Terminal states must not be re-published — only failures retry.
@@ -340,8 +354,17 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
             await message.ack()
             return
 
+        if final_status == "scheduled":
+            # Future run_at: park the message on the retry queue with a TTL
+            # that expires when the task comes due, then ack this copy.
+            await _publish_retry(publisher, task_id, task_type, defer_seconds)
+            await message.ack()
+            return
+
         if attempt_count < max_attempts:
-            await _publish_retry(publisher, task_id, task_type, attempt_count)
+            await _publish_retry(
+                publisher, task_id, task_type, _calculate_retry_delay(attempt_count)
+            )
         elif attempt_count >= max_attempts:
             async with AsyncSessionLocal() as db_retry:
                 result = await db_retry.execute(
@@ -362,8 +385,13 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
         await message.ack()
 
     except Exception:
-        logger.exception("Error processing task %s", task_id)
-        await message.ack()
+        # Infra-level failure (e.g. DB unavailable) — do NOT ack, or the
+        # message is lost while the task row stays 'queued' forever.
+        # Requeue so RabbitMQ redelivers once the dependency recovers.
+        logger.exception(
+            "Unexpected error processing task %s — requeueing.", task_id
+        )
+        await message.reject(requeue=True)
 
 
 async def _heartbeat_loop(worker: WorkerRegistration) -> None:

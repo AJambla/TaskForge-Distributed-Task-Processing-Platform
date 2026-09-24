@@ -13,6 +13,7 @@ from typing import Final
 
 import aio_pika
 from aio_pika import ExchangeType, Message, DeliveryMode
+from fastapi import HTTPException, status
 
 from app.config import get_settings
 
