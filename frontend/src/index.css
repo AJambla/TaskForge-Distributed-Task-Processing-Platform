@@ -1490,7 +1490,7 @@ html {
 .sidenav__foot-links {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 0 4px;
 }
 
@@ -1524,6 +1524,13 @@ html {
   -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--line);
+}
+
+/* Unlayered display:flex beats Tailwind's lg:hidden utility, so hide the topbar explicitly on desktop. */
+@media (min-width: 1024px) {
+  .console__topbar {
+    display: none;
+  }
 }
 
 .console__main {

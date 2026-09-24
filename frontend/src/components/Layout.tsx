@@ -106,9 +106,6 @@ export default function Layout() {
           </span>
         </div>
         <div className="sidenav__foot-links">
-          <Link to="/" className="navlink !text-xs">
-            Landing
-          </Link>
           <button className="sidenav__signout" onClick={logout}>
             Sign out
           </button>
