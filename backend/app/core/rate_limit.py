@@ -28,8 +28,9 @@ def make_rate_limiter(limit: int):
         if api_key_header:
             identifier = api_key_header
         elif request.headers.get("authorization", "").startswith("Bearer "):
+            import hashlib
             token = request.headers["authorization"][7:]
-            identifier = f"auth:{token[:16]}"
+            identifier = f"auth:{hashlib.sha256(token.encode()).hexdigest()}"
         else:
             identifier = request.client.host if request.client else "unknown"
 

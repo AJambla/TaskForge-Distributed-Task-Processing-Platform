@@ -46,6 +46,7 @@ async def test_window_constant():
 
 
 async def test_allows_requests_within_limit(fake_redis):
+    import hashlib
     limiter = make_rate_limiter(limit=3)
     token = "tok-abcdefghijk1234"
     request = FakeRequest({"authorization": f"Bearer {token}"})
@@ -53,7 +54,8 @@ async def test_allows_requests_within_limit(fake_redis):
     for _ in range(3):
         await limiter(request)
 
-    assert await fake_redis.get(f"ratelimit:auth:{token[:16]}:60") == "3"
+    expected_key = f"ratelimit:auth:{hashlib.sha256(token.encode()).hexdigest()}:60"
+    assert await fake_redis.get(expected_key) == "3"
 
 
 async def test_raises_429_over_limit(fake_redis):
@@ -70,6 +72,7 @@ async def test_raises_429_over_limit(fake_redis):
 
 
 async def test_api_key_and_bearer_use_separate_counters(fake_redis):
+    import hashlib
     limiter = make_rate_limiter(limit=5)
     token = "tok-abcdefghijk1234"
     bearer_request = FakeRequest({"authorization": f"Bearer {token}"})
@@ -78,7 +81,8 @@ async def test_api_key_and_bearer_use_separate_counters(fake_redis):
     await limiter(bearer_request)
     await limiter(api_key_request, api_key_header="tf_live_key123")
 
-    assert await fake_redis.get(f"ratelimit:auth:{token[:16]}:60") == "1"
+    expected_key = f"ratelimit:auth:{hashlib.sha256(token.encode()).hexdigest()}:60"
+    assert await fake_redis.get(expected_key) == "1"
     assert await fake_redis.get("ratelimit:tf_live_key123:60") == "1"
 
 
