@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # Image Resize Handler
     image_max_dimension_px: int = 4096
     image_max_response_size_mb: int = 50
+    image_output_dir: str = "data/images"
 
     # Webhook Handler
     webhook_max_response_size_kb: int = 1024
