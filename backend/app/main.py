@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import get_settings
@@ -22,7 +23,7 @@ async def _check_db() -> tuple[bool, str]:
         async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
         return True, "ok"
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, OSError, Exception) as exc:
         return False, str(exc)
 
 
@@ -111,4 +112,4 @@ async def healthz():
     if all_ok:
         return {"status": "ok", "components": components}
 
-    return {"status": "error", "components": components}, 503
+    return JSONResponse(status_code=503, content={"status": "error", "components": components})
