@@ -102,8 +102,11 @@ async def test_stale_heartbeat_worker_reported_offline(
     entry = next(w for w in resp.json() if w["hostname"] == "crashed-worker")
     assert entry["status"] == "offline"
 
-    # The sweep committed via the app's session; drop this session's
-    # cached copies so the re-read hits the database.
+    # Stale worker pruning is executed by the background scheduler
+    from app.scheduler.main import prune_stale_workers
+    await prune_stale_workers(db_session)
+
+    # Drop cached copies so the re-read hits the database.
     db_session.expire_all()
     result = await db_session.execute(
         select(WorkerRegistration).where(

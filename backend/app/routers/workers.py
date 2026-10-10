@@ -23,27 +23,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _mark_stale_workers_offline(db) -> None:
-    """Workers that stopped heartbeating are offline, whatever they claim."""
-    cutoff = datetime.now(timezone.utc) - timedelta(
-        seconds=get_settings().worker_heartbeat_timeout_seconds
-    )
-    await db.execute(
-        update(WorkerRegistration)
-        .where(
-            WorkerRegistration.status == "online",
-            WorkerRegistration.last_heartbeat_at < cutoff,
-        )
-        .values(
-            status="offline",
-            # Self-assignment suppresses onupdate=func.now() so the stored
-            # heartbeat still shows when the worker was actually last seen.
-            last_heartbeat_at=WorkerRegistration.last_heartbeat_at,
-        )
-    )
-    await db.commit()
-
-
 @router.get(
     "",
     response_model=list[WorkerListItem],
@@ -56,7 +35,6 @@ async def list_workers(
     page_size: int = Query(20, ge=1, le=100),
 ) -> list[WorkerListItem]:
     """List all worker registrations, sorted by last heartbeat descending."""
-    await _mark_stale_workers_offline(db)
     offset = (page - 1) * page_size
     result = await db.execute(
         select(WorkerRegistration)
@@ -65,7 +43,16 @@ async def list_workers(
         .limit(page_size)
     )
     workers = result.scalars().all()
-    return [WorkerListItem.model_validate(w) for w in workers]
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=get_settings().worker_heartbeat_timeout_seconds
+    )
+    items = []
+    for w in workers:
+        item = WorkerListItem.model_validate(w)
+        if item.status == "online" and item.last_heartbeat_at and item.last_heartbeat_at < cutoff:
+            item.status = "offline"
+        items.append(item)
+    return items
 
 
 @router.get(
@@ -104,10 +91,17 @@ async def get_worker(
         reverse=True,
     )[:limit]
 
+    worker_status = worker.status
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=get_settings().worker_heartbeat_timeout_seconds
+    )
+    if worker_status == "online" and worker.last_heartbeat_at and worker.last_heartbeat_at < cutoff:
+        worker_status = "offline"
+
     return WorkerDetail(
         id=worker.id,
         hostname=worker.hostname,
-        status=worker.status,
+        status=worker_status,
         concurrency_limit=worker.concurrency_limit,
         current_task_count=worker.current_task_count,
         last_heartbeat_at=worker.last_heartbeat_at,

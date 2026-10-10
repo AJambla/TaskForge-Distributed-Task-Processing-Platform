@@ -11,7 +11,7 @@ import os
 import signal
 import socket
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -218,6 +218,32 @@ async def _mark_scheduler_offline(db, worker_id) -> None:
     logger.info("Scheduler marked offline: id=%s", worker_id)
 
 
+async def prune_stale_workers(db: AsyncSession | None = None) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=SETTINGS.worker_heartbeat_timeout_seconds
+    )
+    stmt = (
+        update(WorkerRegistration)
+        .where(
+            WorkerRegistration.status == "online",
+            WorkerRegistration.last_heartbeat_at < cutoff,
+        )
+        .values(
+            status="offline",
+            last_heartbeat_at=WorkerRegistration.last_heartbeat_at,
+        )
+    )
+    if db is not None:
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount
+
+    async with SchedulerSessionLocal() as session:
+        result = await session.execute(stmt)
+        await session.commit()
+        return result.rowcount
+
+
 async def main() -> None:
     logger.info("Starting TaskForge scheduler (hostname=%s)...", _SCHEDULER_HOSTNAME)
 
@@ -254,6 +280,12 @@ async def main() -> None:
                     logger.info("Rescheduled %d recurring task(s).", count)
             except Exception:
                 logger.exception("Error in reschedule loop")
+            try:
+                pruned = await prune_stale_workers()
+                if pruned > 0:
+                    logger.info("Pruned %d stale worker(s) to offline.", pruned)
+            except Exception:
+                logger.exception("Error in prune_stale_workers")
             try:
                 await asyncio.wait_for(
                     shutdown_event.wait(), timeout=SCAN_INTERVAL_SECONDS
