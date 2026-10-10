@@ -461,6 +461,21 @@ export default function Tasks() {
               </Field>
             </div>
 
+            <Field label="Recurrence (Cron)" hint="Optional cron expression for recurring tasks, e.g. 0 * * * *">
+              <input
+                type="text"
+                value={formData.recurrence_rule ?? ""}
+                onChange={(e) =>
+                  setFormData((f) => ({
+                    ...f,
+                    recurrence_rule: e.target.value ? e.target.value : undefined,
+                  }))
+                }
+                className="field__input mono"
+                placeholder="e.g. 0 * * * * or */15 * * * *"
+              />
+            </Field>
+
             {createMutation.error && (
               <p className="text-xs" style={{ color: "#b91c1c" }}>
                 {(

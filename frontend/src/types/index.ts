@@ -55,6 +55,7 @@ export interface TaskCreateRequest {
   priority?: number;
   max_attempts?: number;
   run_at?: string;
+  recurrence_rule?: string;
 }
 
 export interface TaskListResponse {
