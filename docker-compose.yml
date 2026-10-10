@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-taskforge}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskforge_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskforge_dev_secret}
       POSTGRES_DB: ${POSTGRES_DB:-taskforge}
     ports:
       - "5432:5432"
@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-taskforge}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-taskforge_dev}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-taskforge_dev_secret}
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-taskforge}
       RABBITMQ_PLUGINS: rabbitmq_prometheus
     ports:
@@ -59,9 +59,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,9 +83,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
     depends_on:
       postgres:
@@ -105,9 +105,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,7 +120,7 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     restart: unless-stopped
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}?sslmode=disable"
     ports:
       - "9187:9187"
     depends_on:

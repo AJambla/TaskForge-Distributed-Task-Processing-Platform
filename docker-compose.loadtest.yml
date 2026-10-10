@@ -41,9 +41,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
       APP_ENV: staging
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
       RATE_LIMIT_TASK_SUBMISSION_PER_MINUTE: ${RATE_LIMIT_TASK_SUBMISSION_PER_MINUTE:-600}
@@ -51,17 +51,17 @@ services:
 
   worker:
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
       APP_ENV: staging
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
 
   scheduler:
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
       APP_ENV: staging
 
   prometheus:
