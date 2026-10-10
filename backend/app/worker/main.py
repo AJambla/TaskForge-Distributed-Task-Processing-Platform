@@ -40,8 +40,10 @@ from app.worker.metrics import (
     workers_online_total,
 )
 
+_SETTINGS = get_settings()
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, _SETTINGS.log_level.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("worker")
@@ -59,8 +61,6 @@ _TIMEOUT_MAP: dict[str, str] = {
 }
 
 _HEARTBEAT_INTERVAL_SECONDS = 15
-
-_SETTINGS = get_settings()
 _WORKER_HOSTNAME: str = os.environ.get("WORKER_HOSTNAME", socket.gethostname())
 
 # Number of handlers executing right now in this process. Reported with

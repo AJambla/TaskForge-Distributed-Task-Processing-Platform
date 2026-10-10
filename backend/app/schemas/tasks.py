@@ -123,20 +123,3 @@ class TaskListResponse(BaseModel):
     data: list[TaskResponse]
     pagination: PaginationInfo
 
-
-class TaskFilter(BaseModel):
-    status: TaskStatus | None = None
-    task_type: TaskType | None = None
-    created_after: datetime | None = None
-    created_before: datetime | None = None
-    page: int = Field(1, ge=1)
-    page_size: int = Field(20, ge=1, le=100)
-    sort: str = Field("-created_at", description="e.g. -created_at, status, task_type")
-
-
-class CancelTaskRequest(BaseModel):
-    pass
-
-
-class RetryTaskRequest(BaseModel):
-    pass

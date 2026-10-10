@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
+import logging
+
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.rabbitmq import get_publisher
@@ -13,6 +15,10 @@ from app.database import engine
 from app.routers import api_keys, auth, queues, tasks, workers
 
 settings = get_settings()
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper(), logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 cors_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 
 

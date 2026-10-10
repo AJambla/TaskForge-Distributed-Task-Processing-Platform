@@ -19,13 +19,6 @@ logger = logging.getLogger(__name__)
 _client: redis.Redis | None = None
 
 
-def _redis_url() -> str:
-    settings = get_settings()
-    url = settings.redis_url
-    # Ensure the URL has a scheme for redis.asyncio
-    if not url.startswith(("redis://", "rediss://")):
-        url = f"redis://{url}"
-    return url
 
 
 async def get_redis() -> redis.Redis:
@@ -66,16 +59,6 @@ async def check_idempotency(
     return not result  # True = already exists (duplicate)
 
 
-async def get_idempotency_task_id(
-    user_id: str, idempotency_key: str
-) -> str | None:
-    """Return the task_id stored in the idempotency cache, if any."""
-    client = await get_redis()
-    key = f"idem:{user_id}:{idempotency_key}"
-    value = await client.get(key)
-    return value if value else None
-
-
 async def set_idempotency_task_id(
     user_id: str, idempotency_key: str, task_id: str, ttl_seconds: int = 86400
 ) -> None:
@@ -96,15 +79,6 @@ async def acquire_distributed_lock(
     key = f"lock:{lock_name}"
     result = await client.set(key, owner, nx=True, ex=ttl_seconds)
     return bool(result)
-
-
-async def release_distributed_lock(lock_name: str, owner: str) -> None:
-    """Release a distributed lock if we own it."""
-    client = await get_redis()
-    key = f"lock:{lock_name}"
-    current = await client.get(key)
-    if current == owner:
-        await client.delete(key)
 
 
 async def increment_rate_limit_counter(

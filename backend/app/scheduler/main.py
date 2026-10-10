@@ -27,13 +27,13 @@ from app.core.redis import acquire_distributed_lock, close_redis
 from app.models.task import Task
 from app.models.worker_registration import WorkerRegistration
 
+SETTINGS = get_settings()
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, SETTINGS.log_level.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("scheduler")
-
-SETTINGS = get_settings()
 _SCHEDULER_HOSTNAME: str = os.environ.get(
     "SCHEDULER_HOSTNAME", socket.gethostname()
 )
@@ -62,20 +62,9 @@ def _next_occurrence(run_at: datetime, recurrence_rule: str) -> datetime | None:
     try:
         from croniter import croniter
         base = run_at.replace(tzinfo=timezone.utc)
-        next_time = croniter(recurrence_rule, base).get_next(datetime)
-        return next_time
+        return croniter(recurrence_rule, base).get_next(datetime)
     except Exception:
-        pass
-
-    try:
-        from apscheduler.triggers.cron import CronTrigger
-        trigger = CronTrigger.from_crontab(recurrence_rule, timezone="UTC")
-        next_time = trigger.next_fire_time(run_at)
-        if next_time is None:
-            return None
-        return next_time.astimezone(timezone.utc)
-    except Exception:
-        logger.exception("Failed to compute next occurrence for %r", recurrence_rule)
+        logger.warning("Failed to compute next occurrence for recurrence rule %r", recurrence_rule)
         return None
 
 
@@ -237,12 +226,21 @@ async def prune_stale_workers(db: AsyncSession | None = None) -> int:
     if db is not None:
         result = await db.execute(stmt)
         await db.commit()
-        return result.rowcount
+        pruned_count = result.rowcount
+    else:
+        async with SchedulerSessionLocal() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            pruned_count = result.rowcount
 
-    async with SchedulerSessionLocal() as session:
-        result = await session.execute(stmt)
-        await session.commit()
-        return result.rowcount
+    if pruned_count > 0:
+        try:
+            from app.worker.metrics import worker_heartbeat_missed_total
+            worker_heartbeat_missed_total.inc(pruned_count)
+        except Exception:
+            pass
+
+    return pruned_count
 
 
 async def main() -> None:
