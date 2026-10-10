@@ -461,7 +461,11 @@ async def _heartbeat_loop(worker: WorkerRegistration) -> None:
             logger.exception("Heartbeat update failed for worker %s", worker.id)
 
 
-async def subscribe_queues(publisher, worker_id=None) -> None:
+_inflight_tasks: set[asyncio.Task] = set()
+_SHUTDOWN_TIMEOUT_SECONDS = 30
+
+
+async def subscribe_queues(publisher, worker_id=None, shutdown_event=None) -> list[tuple[Any, str]]:
     channel = publisher.channel
     if channel is None:
         raise RuntimeError("RabbitMQ channel not available.")
@@ -472,9 +476,20 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
 
     def _make_handler(pub):
         async def handler(msg):
-            await on_message(msg, pub, worker_id=worker_id)
+            if shutdown_event and shutdown_event.is_set():
+                await msg.reject(requeue=True)
+                return
+            current = asyncio.current_task()
+            if current:
+                _inflight_tasks.add(current)
+            try:
+                await on_message(msg, pub, worker_id=worker_id)
+            finally:
+                if current:
+                    _inflight_tasks.discard(current)
         return handler
 
+    consumers = []
     for task_type in TASK_TYPES:
         main_queue_name = f"tasks.{task_type}"
         queue = await channel.declare_queue(
@@ -486,7 +501,9 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
             },
         )
         await queue.bind(exchange, routing_key=task_type)
-        await queue.consume(_make_handler(publisher))
+        tag = await queue.consume(_make_handler(publisher))
+        if tag:
+            consumers.append((queue, tag))
         logger.info(
             "Subscribed to queue '%s' (routing key: %s).",
             main_queue_name,
@@ -520,6 +537,8 @@ async def subscribe_queues(publisher, worker_id=None) -> None:
         await dlq_queue.bind(exchange, routing_key=f"tasks.{task_type}.dlq")
         logger.info("Declared DLQ '%s' (messages are terminal).", dlq_queue_name)
 
+    return consumers
+
 
 async def main() -> None:
     _metrics_port = int(os.environ.get("PORT_METRICS", 9001))
@@ -530,6 +549,7 @@ async def main() -> None:
     publisher = await get_publisher()
     worker = None
     heartbeat_task: asyncio.Task | None = None
+    consumers: list[tuple[Any, str]] = []
 
     try:
         async with AsyncSessionLocal() as db:
@@ -537,13 +557,17 @@ async def main() -> None:
 
         heartbeat_task = asyncio.create_task(_heartbeat_loop(worker))
 
-        await subscribe_queues(publisher, worker_id=str(worker.id))
+        loop = asyncio.get_running_loop()
+        shutdown_event = asyncio.Event()
+
+        consumers = await subscribe_queues(publisher, worker_id=str(worker.id), shutdown_event=shutdown_event)
         logger.info("Worker ready. Waiting for messages...")
 
         async def _on_reconnect():
+            nonlocal consumers
             logger.info("RabbitMQ connection restored — resubscribing worker queues...")
             try:
-                await subscribe_queues(publisher, worker_id=str(worker.id))
+                consumers = await subscribe_queues(publisher, worker_id=str(worker.id), shutdown_event=shutdown_event)
                 logger.info("Successfully resubscribed queues after reconnect.")
             except Exception:
                 logger.exception("Failed to resubscribe queues after reconnect.")
@@ -551,10 +575,8 @@ async def main() -> None:
         if hasattr(publisher.connection, "reconnect_callbacks"):
             publisher.connection.reconnect_callbacks.add(lambda conn: asyncio.create_task(_on_reconnect()))
 
-        loop = asyncio.get_running_loop()
-        shutdown_event = asyncio.Event()
-
         def _handle_signal() -> None:
+            logger.info("Shutdown signal received — initiating graceful drain...")
             shutdown_event.set()
 
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -564,6 +586,24 @@ async def main() -> None:
                 pass
 
         await shutdown_event.wait()
+
+        # Stop consuming new messages
+        for queue, tag in consumers:
+            try:
+                await queue.cancel(tag)
+            except Exception:
+                pass
+
+        # Drain in-flight tasks
+        if _inflight_tasks:
+            logger.info("Waiting for %d in-flight task(s) to finish...", len(_inflight_tasks))
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*list(_inflight_tasks), return_exceptions=True),
+                    timeout=_SHUTDOWN_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Timed out waiting for in-flight tasks to drain.")
 
     except Exception:
         logger.exception("Unexpected error in worker main loop")
