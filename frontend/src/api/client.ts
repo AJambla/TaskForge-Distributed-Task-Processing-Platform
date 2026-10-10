@@ -35,8 +35,11 @@ const retryFailedRequests = async (originalRequest: any) => {
 
 const refreshAccessToken = async (refreshToken: string) => {
   const response = await client.post("/auth/refresh", { refresh_token: refreshToken });
-  const { access_token, expires_in } = response.data;
+  const { access_token, refresh_token, expires_in } = response.data;
   localStorage.setItem("access_token", access_token);
+  if (refresh_token) {
+    localStorage.setItem("refresh_token", refresh_token);
+  }
   localStorage.setItem("access_expires_in", String(expires_in));
   return access_token;
 };
