@@ -161,3 +161,54 @@ async def test_future_run_at_task_is_deferred_via_retry_ttl(env):
     assert kwargs["routing_key"] == "tasks.email_send.retry"
     assert args[0].expiration == timedelta(milliseconds=120000)
     msg.ack.assert_awaited_once()
+
+
+async def test_create_attempt_uses_current_attempt_count():
+    db = MagicMock()
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+
+    task = MagicMock()
+    task.id = "task-uuid-1"
+    task.attempt_count = 1
+
+    attempt = await worker_main.create_attempt(db, task, worker_id="worker-1")
+    assert attempt.attempt_number == 1
+    db.add.assert_called_once_with(attempt)
+    db.flush.assert_awaited_once()
+
+
+async def test_mark_failure_sets_retrying_status_below_max():
+    db = MagicMock()
+    db.commit = AsyncMock()
+    db.execute = AsyncMock()
+
+    task = MagicMock()
+    task.attempt_count = 1
+    task.max_attempts = 3
+    task.status = "running"
+
+    attempt = MagicMock()
+
+    await worker_main._mark_failure(db, task, attempt, "failure", exc=ValueError("boom"))
+    assert task.status == "retrying"
+    assert attempt.outcome == "failure"
+    db.commit.assert_awaited_once()
+
+
+async def test_mark_failure_sets_failed_status_at_max():
+    db = MagicMock()
+    db.commit = AsyncMock()
+    db.execute = AsyncMock()
+
+    task = MagicMock()
+    task.attempt_count = 3
+    task.max_attempts = 3
+    task.status = "running"
+
+    attempt = MagicMock()
+
+    await worker_main._mark_failure(db, task, attempt, "failure", exc=ValueError("boom"))
+    assert task.status == "failed"
+    db.commit.assert_awaited_once()
+

@@ -151,7 +151,7 @@ def _calculate_retry_delay(attempt_count: int) -> int:
 async def create_attempt(db, task: Task, worker_id=None) -> TaskAttempt:
     attempt = TaskAttempt(
         task_id=task.id,
-        attempt_number=task.attempt_count + 1,
+        attempt_number=task.attempt_count,
         worker_id=worker_id,
         started_at=datetime.now(timezone.utc),
     )
@@ -179,6 +179,10 @@ async def _mark_failure(
     if exc is not None:
         attempt.error_message = str(exc)
         attempt.error_detail = {"traceback": traceback.format_exc()}
+    if task.attempt_count < task.max_attempts:
+        task.status = "retrying"
+    else:
+        task.status = "failed"
     await db.commit()
     if outcome == "failure":
         await _update_worker_stats(db, worker_id, tasks_failed=1)
