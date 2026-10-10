@@ -43,16 +43,14 @@ class RabbitMQPublisher:
         return self._exchange
 
     async def connect(self) -> None:
-        """Establish connection, channel, and declare the main exchange."""
+        """Establish robust connection, channel, and declare the main exchange."""
         settings = get_settings()
-        self._connection = await aio_pika.connect(
+        self._connection = await aio_pika.connect_robust(
             settings.rabbitmq_url,
             timeout=10,
         )
         self._channel = await self._connection.channel()
-        # prefetch == per-worker concurrency limit: the broker never hands a
-        # worker more unacked messages than it will execute at once, so
-        # surplus work stays in the queue for other workers.
+        # prefetch == per-worker concurrency limit
         await self._channel.set_qos(prefetch_count=settings.worker_concurrency)
 
         self._exchange = await self._channel.declare_exchange(
@@ -67,6 +65,9 @@ class RabbitMQPublisher:
         if self._connection and not self._connection.is_closed:
             await self._connection.close()
             logger.info("RabbitMQ connection closed.")
+        self._connection = None
+        self._channel = None
+        self._exchange = None
 
     async def publish(self, task_id: str, task_type: str) -> None:
         """Publish a task message to the main exchange.
@@ -75,8 +76,19 @@ class RabbitMQPublisher:
             task_id: UUID string of the task to process.
             task_type: routing key (e.g. 'email_send').
         """
-        if self._exchange is None:
-            raise RuntimeError("RabbitMQ not connected. Call connect() first.")
+        if self._connection is None or self._connection.is_closed:
+            await self.connect()
+
+        if self._exchange is None or self._channel is None or self._channel.is_closed:
+            if self._channel is None or self._channel.is_closed:
+                self._channel = await self._connection.channel()
+                settings = get_settings()
+                await self._channel.set_qos(prefetch_count=settings.worker_concurrency)
+            self._exchange = await self._channel.declare_exchange(
+                EXCHANGE_NAME,
+                ExchangeType.DIRECT,
+                durable=True,
+            )
 
         body = task_id.encode("utf-8")
         message = Message(
@@ -103,7 +115,7 @@ _publisher: RabbitMQPublisher | None = None
 async def get_publisher() -> RabbitMQPublisher:
     """Lazily create and cache the RabbitMQ publisher singleton."""
     global _publisher
-    if _publisher is None:
+    if _publisher is None or _publisher.connection is None or _publisher.connection.is_closed:
         _publisher = RabbitMQPublisher()
         await _publisher.connect()
     return _publisher
