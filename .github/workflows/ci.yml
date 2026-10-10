@@ -59,7 +59,9 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run pytest
-        run: cd backend && pytest --tb=short -v
+        run: pytest tests/unit --tb=short -v
+        env:
+          PYTHONPATH: backend
 
   frontend-build:
     name: Frontend Build
