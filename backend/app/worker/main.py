@@ -536,6 +536,17 @@ async def main() -> None:
         await subscribe_queues(publisher, worker_id=str(worker.id))
         logger.info("Worker ready. Waiting for messages...")
 
+        async def _on_reconnect():
+            logger.info("RabbitMQ connection restored — resubscribing worker queues...")
+            try:
+                await subscribe_queues(publisher, worker_id=str(worker.id))
+                logger.info("Successfully resubscribed queues after reconnect.")
+            except Exception:
+                logger.exception("Failed to resubscribe queues after reconnect.")
+
+        if hasattr(publisher.connection, "reconnect_callbacks"):
+            publisher.connection.reconnect_callbacks.add(lambda conn: asyncio.create_task(_on_reconnect()))
+
         loop = asyncio.get_running_loop()
         shutdown_event = asyncio.Event()
 
