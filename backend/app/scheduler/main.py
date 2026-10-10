@@ -37,7 +37,7 @@ SETTINGS = get_settings()
 _SCHEDULER_HOSTNAME: str = os.environ.get(
     "SCHEDULER_HOSTNAME", socket.gethostname()
 )
-SCAN_INTERVAL_SECONDS = 30
+SCAN_INTERVAL_SECONDS = SETTINGS.scheduler_scan_interval_seconds
 _HEARTBEAT_INTERVAL_SECONDS = 15
 _LOCK_TTL_SECONDS = 10
 
@@ -64,7 +64,7 @@ def _next_occurrence(run_at: datetime, recurrence_rule: str) -> datetime | None:
         base = run_at.replace(tzinfo=timezone.utc)
         next_time = croniter(recurrence_rule, base).get_next(datetime)
         return next_time
-    except ImportError:
+    except Exception:
         pass
 
     try:
@@ -143,10 +143,11 @@ async def _reschedule_recurring_tasks() -> int:
                         current_task.recurrence_rule = None
                     new_db.add(new_task)
                     await new_db.commit()
-                    await publisher.publish(str(new_task.id), task.task_type)
+                    # Publish the currently due task execution
+                    await publisher.publish(str(task.id), task.task_type)
                 reScheduled += 1
                 logger.info(
-                    "Re-scheduled task %s -> new task %s (next run_at=%s)",
+                    "Re-scheduled task %s (published current, cloned new task %s for next run_at=%s)",
                     task.id,
                     new_task.id,
                     next_run_at,
@@ -274,18 +275,27 @@ async def main() -> None:
             "Scheduler ready. Scanning every %ds...", SCAN_INTERVAL_SECONDS
         )
         while not shutdown_event.is_set():
-            try:
-                count = await _reschedule_recurring_tasks()
-                if count > 0:
-                    logger.info("Rescheduled %d recurring task(s).", count)
-            except Exception:
-                logger.exception("Error in reschedule loop")
-            try:
-                pruned = await prune_stale_workers()
-                if pruned > 0:
-                    logger.info("Pruned %d stale worker(s) to offline.", pruned)
-            except Exception:
-                logger.exception("Error in prune_stale_workers")
+            is_leader = await acquire_distributed_lock(
+                "lock:scheduler:scan",
+                _SCHEDULER_HOSTNAME,
+                ttl_seconds=max(5, SCAN_INTERVAL_SECONDS - 2),
+            )
+            if is_leader:
+                try:
+                    count = await _reschedule_recurring_tasks()
+                    if count > 0:
+                        logger.info("Rescheduled %d recurring task(s).", count)
+                except Exception:
+                    logger.exception("Error in reschedule loop")
+                try:
+                    pruned = await prune_stale_workers()
+                    if pruned > 0:
+                        logger.info("Pruned %d stale worker(s) to offline.", pruned)
+                except Exception:
+                    logger.exception("Error in prune_stale_workers")
+            else:
+                logger.debug("Another scheduler instance is currently the active scan leader.")
+
             try:
                 await asyncio.wait_for(
                     shutdown_event.wait(), timeout=SCAN_INTERVAL_SECONDS

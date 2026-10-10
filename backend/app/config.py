@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     worker_hostname: str = "worker-local"
     # A worker/scheduler that misses heartbeats this long is shown offline.
     worker_heartbeat_timeout_seconds: int = 60
+    scheduler_scan_interval_seconds: int = 30
 
     # Task Settings
     task_max_attempts_default: int = 5
