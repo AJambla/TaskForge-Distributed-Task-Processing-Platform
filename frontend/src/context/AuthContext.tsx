@@ -7,7 +7,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   register: (credentials: RegisterCredentials) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -57,12 +57,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await client.post("/auth/register", credentials);
   };
 
-  const logout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("access_expires_in");
-    setUser(null);
-    setIsAuthenticated(false);
+  const logout = async () => {
+    try {
+      await client.post("/auth/logout");
+    } catch {
+      // Ignore network/auth errors to ensure local cleanup always completes
+    } finally {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      localStorage.removeItem("access_expires_in");
+      setUser(null);
+      setIsAuthenticated(false);
+    }
   };
 
   return (
