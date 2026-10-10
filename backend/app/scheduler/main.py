@@ -137,6 +137,10 @@ async def _reschedule_recurring_tasks() -> int:
                     recurrence_rule=task.recurrence_rule,
                 )
                 async with SchedulerSessionLocal() as new_db:
+                    # Clear recurrence_rule on the current task so it does not trigger duplicate re-scheduling
+                    current_task = await new_db.get(Task, task.id)
+                    if current_task is not None:
+                        current_task.recurrence_rule = None
                     new_db.add(new_task)
                     await new_db.commit()
                     await publisher.publish(str(new_task.id), task.task_type)
