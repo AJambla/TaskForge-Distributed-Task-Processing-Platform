@@ -52,8 +52,6 @@ load-tests/results/
 # Database backups / SQL dumps
 *.sql
 *.sql.gz
-Docs/
-README.md
 
 /frontend-vite*.log
 ui-ux-pro-max-skill/

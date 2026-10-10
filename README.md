@@ -46,7 +46,7 @@ flowchart TB
     end
 
     subgraph sched["Scheduler"]
-        SCHED["APScheduler\n• Recurring task\n• Re-scheduling"]
+        SCHED["Async Scheduler\n• croniter loop\n• Distributed lock"]
     end
 
     subgraph observability["Observability"]
@@ -184,11 +184,11 @@ Throughput results are measured and reported in the load-test output — no assu
 | **Task Queue** | RabbitMQ (aio-pika) — main / retry / DLQ queues per task type |
 | **Database** | PostgreSQL 16 — source of truth for tasks, attempts, users, workers |
 | **Coordination** | Redis 7 — idempotency keys, distributed locks, rate-limit counters |
-| **Worker** | Custom async loop (aio-pika) — no Celery; the queueing mechanics are the point |
-| **Scheduler** | APScheduler + croniter — recurring task re-scheduling |
-| **Frontend** | React 19 · TypeScript · Tailwind CSS · React Query 7 · React Router 7 |
+| **Worker** | Custom async loop (aio-pika) — no Celery; explicit queueing and failure recovery |
+| **Scheduler** | Custom async loop + croniter — recurring task re-scheduling with Redis locking |
+| **Frontend** | React 19 · TypeScript · Tailwind CSS v4 · TanStack Query 5 · React Router 7 |
 | **Observability** | Prometheus · Grafana |
-| **Load Testing** | k6 |
+| **Load Testing** | k6 (4 scenarios: baseline, stress, spike, endurance) |
 | **Infrastructure** | Docker Compose (local) · Managed PaaS (prod) · GitHub Actions (CI/CD) |
 
 
@@ -217,7 +217,7 @@ TaskForge/
 │   │   │   ├── metrics.py      # Prometheus counters/histograms
 │   │   │   └── handlers/       # email.py, image.py, webhook.py
 │   │   └── scheduler/
-│   │       └── main.py         # APScheduler recurring-task service
+│   │       └── main.py         # Custom async recurring-task service with Redis locks
 │   └── alembic/                # Database migrations
 ├── frontend/                   # React 19 + TypeScript dashboard
 │   └── src/
@@ -276,7 +276,7 @@ cd frontend && npm install && npm run dev
 | Frontend dashboard | http://localhost:5173 |
 | RabbitMQ management | http://localhost:15672 |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 (admin/admin) |
+| Grafana | http://localhost:3000 (admin / taskforge_grafana_dev) |
 
 
 ## API Quick Start
@@ -317,14 +317,17 @@ curl -X POST http://localhost:8000/api/v1/tasks \
 
 
 
-The project targets **Phases 1–7**. Phase 8 (next) includes:
+### Production-Grade Features Implemented
 
-- **Integration tests** — unit, integration against real Postgres/RabbitMQ/Redis, failure tests, concurrency tests
-- **Admin API endpoints** — `GET /workers`, `GET /workers/:id`, `GET /queues` (documented but not implemented)
-- **Refresh token rotation** — issue a new refresh token on each use
-- **Postgres exporter** — DB-level metrics for bottleneck analysis
-- **Alerting rules** — Prometheus alertmanager integration
-- **Backpressure** — submission throttling at high queue depth
+The full production hardening roadmap has been implemented and verified:
+
+- **Integration test suite** — Executing against real PostgreSQL, Redis, and RabbitMQ service containers (`tests/integration/`).
+- **Cluster & Queue APIs** — `GET /api/v1/workers`, `GET /api/v1/workers/:id`, `GET /api/v1/queues`, `GET /api/v1/queues/dlq`, and `POST /api/v1/queues/dlq/redrive` for dead-letter recovery.
+- **Refresh token rotation & revocation** — Issues new refresh token on every `/auth/refresh` request and revokes stale tokens.
+- **Dynamic backpressure** — Checks RabbitMQ queue depth during task submission and rejects with 429 when backlog exceeds threshold (10,000).
+- **Hardened security** — Comprehensive SSRF protection (blocking RFC 1918, CGNAT `100.64.0.0/10`, metadata endpoints, and HTTP redirects), security response headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `HSTS` in production), non-root containers.
+- **Observability & Alerting** — Prometheus metrics on API (`/api/v1/metrics`) and workers (`:9001`), alerting rules (`monitoring/alerting/rules.yml`), and Grafana dashboards.
+- **Load testing** — Bundled k6 harness with 4 test scenarios (`baseline`, `stress`, `spike`, `endurance`).
 
 ## Design Decisions Worth Discussing
 
