@@ -28,7 +28,7 @@ async def test_connect_sets_prefetch_to_worker_concurrency(monkeypatch):
     connection.channel.return_value = channel
 
     with patch.object(
-        rabbitmq.aio_pika, "connect", AsyncMock(return_value=connection)
+        rabbitmq.aio_pika, "connect_robust", AsyncMock(return_value=connection)
     ):
         publisher = rabbitmq.RabbitMQPublisher()
         await publisher.connect()
