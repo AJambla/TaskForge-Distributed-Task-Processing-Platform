@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from sqlalchemy import extract, func, select
 
 from app.core.deps import CurrentUser, DBSession
-from app.core.rabbitmq import get_queue_depths
+from app.core.rabbitmq import get_queue_depths, publish_task
 from app.models.task import Task
 
 logger = logging.getLogger(__name__)
@@ -124,3 +124,77 @@ async def get_stats(
         },
         "generated_at": now.isoformat(),
     }
+
+
+@router.get(
+    "/dlq",
+    summary="Inspect dead-letter queues",
+)
+async def inspect_dlq(
+    current_user: CurrentUser,
+    db: DBSession,
+) -> dict:
+    """Return depths and recent dead-letter tasks."""
+    depths = await get_queue_depths()
+    dlq_depths = {k: v for k, v in depths.items() if k.endswith(".dlq")}
+
+    result = await db.execute(
+        select(Task)
+        .where(Task.status == "dead_letter")
+        .order_by(Task.completed_at.desc())
+        .limit(50)
+    )
+    dead_tasks = result.scalars().all()
+
+    return {
+        "dlq_depths": dlq_depths,
+        "dead_letter_count": len(dead_tasks),
+        "recent_dead_tasks": [
+            {
+                "id": str(t.id),
+                "task_type": t.task_type,
+                "attempt_count": t.attempt_count,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+            }
+            for t in dead_tasks
+        ],
+    }
+
+
+@router.post(
+    "/dlq/redrive",
+    summary="Redrive dead-letter tasks back to main queue",
+)
+async def redrive_dlq(
+    current_user: CurrentUser,
+    db: DBSession,
+    task_type: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Re-queue dead-letter tasks into the main processing queue."""
+    query = select(Task).where(Task.status == "dead_letter")
+    if task_type:
+        query = query.where(Task.task_type == task_type)
+    query = query.order_by(Task.completed_at.asc()).limit(min(limit, 500))
+
+    result = await db.execute(query)
+    tasks = result.scalars().all()
+
+    redriven_ids = []
+    for task in tasks:
+        task.status = "queued"
+        task.attempt_count = 0
+        task.started_at = None
+        task.completed_at = None
+        task.run_at = datetime.now(timezone.utc)
+        await publish_task(str(task.id), task.task_type)
+        redriven_ids.append(str(task.id))
+
+    await db.commit()
+    logger.info("Redrove %d dead-letter tasks back to queues.", len(redriven_ids))
+    return {
+        "redriven_count": len(redriven_ids),
+        "task_ids": redriven_ids,
+    }
+
