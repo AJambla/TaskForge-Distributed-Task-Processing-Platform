@@ -79,8 +79,15 @@ def _run_handler_in_sandbox(handler, payload) -> object:
     On Windows, resource.setrlimit is unavailable — runs the handler directly
     and relies on the asyncio timeout wrapper instead.
     """
+    import inspect
+
     if sys.platform == "win32" or not _SETTINGS.sandbox_enabled:
-        return handler(payload)
+        if inspect.iscoroutinefunction(handler):
+            return asyncio.run(handler(payload))
+        res = handler(payload)
+        if inspect.isawaitable(res):
+            return asyncio.run(res)
+        return res
 
     import multiprocessing
 
@@ -104,7 +111,12 @@ def _run_handler_in_sandbox(handler, payload) -> object:
                 "Failed to set CPU limit — continuing without CPU cap."
             )
         try:
-            result = handler_fn(payload_data)
+            if inspect.iscoroutinefunction(handler_fn):
+                result = asyncio.run(handler_fn(payload_data))
+            else:
+                result = handler_fn(payload_data)
+                if inspect.isawaitable(result):
+                    result = asyncio.run(result)
             result_queue.put(("ok", result))
         except Exception as exc:
             result_queue.put(("error", exc))
