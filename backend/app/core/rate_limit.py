@@ -35,7 +35,11 @@ def make_rate_limiter(limit: int):
             identifier = request.client.host if request.client else "unknown"
 
         key = f"ratelimit:{identifier}:{RATE_LIMIT_WINDOW_SECONDS}"
-        count = await increment_rate_limit_counter(key, limit, RATE_LIMIT_WINDOW_SECONDS)
+        try:
+            count = await increment_rate_limit_counter(key, limit, RATE_LIMIT_WINDOW_SECONDS)
+        except Exception:
+            logger.warning("Redis unavailable during rate limit check; failing open.", exc_info=True)
+            return
 
         if count > limit:
             raise HTTPException(
@@ -47,5 +51,6 @@ def make_rate_limiter(limit: int):
                         "field": None,
                     }
                 },
+                headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)},
             )
     return _rate_limit
