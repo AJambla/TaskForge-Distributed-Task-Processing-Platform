@@ -64,6 +64,23 @@ class TaskCreateRequest(BaseModel):
         None,
         description="Scheduled execution time; defaults to now if null.",
     )
+    recurrence_rule: str | None = Field(
+        None,
+        max_length=100,
+        description="Optional cron expression (e.g. '0 * * * *') for recurring tasks.",
+    )
+
+    @field_validator("recurrence_rule")
+    @classmethod
+    def validate_recurrence_rule(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                return None
+            from croniter import croniter
+            if not croniter.is_valid(v):
+                raise ValueError(f"Invalid cron expression for recurrence_rule: '{v}'")
+        return v
 
     @field_validator("payload")
     @classmethod

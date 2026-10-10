@@ -82,7 +82,14 @@ async def create_task(
             )
 
     now = datetime.now(timezone.utc)
-    run_at = body.run_at or now
+    run_at = body.run_at
+    if body.recurrence_rule and not run_at:
+        from croniter import croniter
+        run_at = croniter(body.recurrence_rule, now).get_next(datetime)
+        if run_at.tzinfo is None:
+            run_at = run_at.replace(tzinfo=timezone.utc)
+    if not run_at:
+        run_at = now
 
     task = Task(
         user_id=current_user.id,
@@ -92,6 +99,7 @@ async def create_task(
         idempotency_key=idempotency_key,
         max_attempts=body.max_attempts,
         run_at=run_at,
+        recurrence_rule=body.recurrence_rule,
     )
     db.add(task)
     try:
@@ -110,25 +118,27 @@ async def create_task(
             },
         )
 
-    # Publish to RabbitMQ — if this fails, mark task as failed to avoid
-    # a dangling 'queued' state with no message.
-    try:
-        await publish_task(str(task.id), body.task_type.value)
-    except Exception:
-        logger.exception("Failed to publish task %s to RabbitMQ", task.id)
-        task.status = TaskStatus.FAILED.value
-        task.completed_at = datetime.now(timezone.utc)
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "error": {
-                    "code": "QUEUE_UNAVAILABLE",
-                    "message": "Task queue is temporarily unavailable. Please retry.",
-                    "field": None,
-                }
-            },
-        )
+    # For future recurring tasks, let the scheduler dispatch at run_at.
+    # Otherwise publish immediately (worker handles immediate or delayed retry-parking).
+    should_publish = not (body.recurrence_rule and run_at > now)
+    if should_publish:
+        try:
+            await publish_task(str(task.id), body.task_type.value)
+        except Exception:
+            logger.exception("Failed to publish task %s to RabbitMQ", task.id)
+            task.status = TaskStatus.FAILED.value
+            task.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "error": {
+                        "code": "QUEUE_UNAVAILABLE",
+                        "message": "Task queue is temporarily unavailable. Please retry.",
+                        "field": None,
+                    }
+                },
+            )
 
     if idempotency_key:
         await set_idempotency_task_id(
