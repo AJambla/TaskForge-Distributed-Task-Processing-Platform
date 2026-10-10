@@ -29,6 +29,7 @@ async def handle_webhook_delivery(payload: dict[str, Any]) -> dict[str, Any]:
     async with httpx.AsyncClient(
         timeout=timeout,
         headers=headers,
+        follow_redirects=False,
     ) as client:
         resp = await client.post(url, json=body)
 

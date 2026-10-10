@@ -54,7 +54,7 @@ async def handle_image_resize(payload: dict[str, Any]) -> dict[str, Any]:
         fmt = mime_part.split("/")[1].split(";")[0].upper()
         image_bytes = base64.b64decode(b64_part)
     elif source:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             resp = await client.get(source)
             resp.raise_for_status()
             image_bytes = resp.content

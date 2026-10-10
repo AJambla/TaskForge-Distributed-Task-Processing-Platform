@@ -30,3 +30,17 @@ def test_link_local_rejected():
 def test_empty_hostname_rejected():
     with pytest.raises(ValueError):
         validate_url_ssrf_safe("://invalid-url")
+
+
+def test_cgnat_rejected():
+    with pytest.raises(ValueError, match="SSRF protection"):
+        validate_url_ssrf_safe("http://100.64.0.1/internal")
+
+
+def test_invalid_scheme_rejected():
+    with pytest.raises(ValueError, match="SSRF protection: invalid URL scheme"):
+        validate_url_ssrf_safe("ftp://example.com/file.txt")
+
+    with pytest.raises(ValueError, match="SSRF protection: invalid URL scheme"):
+        validate_url_ssrf_safe("file:///etc/passwd")
+
