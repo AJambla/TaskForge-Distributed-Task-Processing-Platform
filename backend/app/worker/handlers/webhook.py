@@ -34,9 +34,8 @@ async def handle_webhook_delivery(payload: dict[str, Any]) -> dict[str, Any]:
         resp = await client.post(url, json=body)
 
     if resp.status_code < 200 or resp.status_code >= 300:
-        raise ValueError(
-            f"Webhook returned HTTP {resp.status_code}: {resp.text[:500]}"
-        )
+        reason = getattr(resp, "reason_phrase", None) or "Error"
+        raise ValueError(f"Webhook delivery failed with HTTP {resp.status_code} ({reason})")
 
     response_kb = len(resp.content) / 1024
     if response_kb > settings.webhook_max_response_size_kb:
