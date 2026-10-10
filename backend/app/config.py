@@ -2,6 +2,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,20 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if self.app_env == "production":
+            insecure_defaults = [
+                "change_me_generate_a_real_secret_here",
+                "secret",
+                "changeme",
+            ]
+            if not self.jwt_secret_key or self.jwt_secret_key in insecure_defaults or len(self.jwt_secret_key) < 32:
+                raise ValueError(
+                    "Production app_env requires a secure JWT_SECRET_KEY of at least 32 characters."
+                )
+        return self
 
     # Application
     app_env: Literal["development", "staging", "production"] = "development"
