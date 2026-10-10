@@ -112,13 +112,25 @@ async def _auth_via_api_key(raw_key: str, db: AsyncSession) -> User:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Update last_used_at (fire-and-forget update — no strong consistency needed)
-    await db.execute(
-        update(APIKey)
-        .where(APIKey.id == api_key.id)
-        .values(last_used_at=datetime.now(timezone.utc))
-    )
-    await db.commit()
+    # Debounce last_used_at updates in Redis to at most once per 60s
+    should_update = False
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        should_update = bool(await redis_client.set(f"apikey:last_used:{api_key.id}", "1", nx=True, ex=60))
+    except Exception:
+        should_update = (
+            api_key.last_used_at is None
+            or (datetime.now(timezone.utc) - api_key.last_used_at).total_seconds() > 60
+        )
+
+    if should_update:
+        await db.execute(
+            update(APIKey)
+            .where(APIKey.id == api_key.id)
+            .values(last_used_at=datetime.now(timezone.utc))
+        )
+        await db.commit()
 
     # Load the user
     result = await db.execute(select(User).where(User.id == api_key.user_id))
