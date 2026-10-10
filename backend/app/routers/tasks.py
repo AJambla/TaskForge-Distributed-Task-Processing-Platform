@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -48,10 +48,14 @@ async def create_task(
     current_user: CurrentUser,
     db: DBSession,
     rate_limit: Annotated[None, Depends(make_rate_limiter(get_settings().rate_limit_task_submission_per_minute))],
-    idempotency_key_header: str | None = Query(
+    idempotency_key_header: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", description="Unique request idempotency key."),
+    ] = None,
+    idempotency_key_query: str | None = Query(
         None,
         alias="Idempotency-Key",
-        description="Alternative body idempotency key (header takes precedence).",
+        description="Alternative query idempotency key for backward compatibility.",
     ),
 ) -> TaskResponse:
     """Submit a task for processing with idempotency protection."""
@@ -59,7 +63,7 @@ async def create_task(
     # never leaves a queued task row with no queued message.
     await check_backpressure()
 
-    idempotency_key = idempotency_key_header or body.idempotency_key
+    idempotency_key = idempotency_key_header or idempotency_key_query or body.idempotency_key
 
     if idempotency_key:
         already = await check_idempotency(
