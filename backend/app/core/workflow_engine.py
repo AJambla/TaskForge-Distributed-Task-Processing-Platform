@@ -104,6 +104,19 @@ async def resolve_and_dispatch_downstream(db: AsyncSession, completed_task_id: U
                 if step.task:
                     step.task.status = "queued"
                     step.task.run_at = datetime.now(timezone.utc)
+                    from app.core.tracing import create_traceparent
+                    step_trace_id = getattr(step.task, "trace_id", None)
+                    if not step_trace_id:
+                        # Fallback: check if other steps in workflow have trace_id
+                        for s in all_steps:
+                            if s.task and getattr(s.task, "trace_id", None):
+                                step_trace_id = s.task.trace_id
+                                break
+                    if not step_trace_id:
+                        step_trace_id = create_traceparent().split("-")[1]
+                    step.task.trace_id = step_trace_id
+                    step_traceparent = create_traceparent(trace_id=step_trace_id)
+
                     from app.outbox.service import create_outbox_event, mark_published
                     outbox_entry = await create_outbox_event(
                         db=db,
@@ -112,6 +125,7 @@ async def resolve_and_dispatch_downstream(db: AsyncSession, completed_task_id: U
                         payload=step.task.payload or {},
                         priority=step.task.priority,
                         event_type="workflow_step_queued",
+                        traceparent=step_traceparent,
                     )
                     dispatched_task_ids.append(step.task.id)
                     try:
@@ -119,6 +133,7 @@ async def resolve_and_dispatch_downstream(db: AsyncSession, completed_task_id: U
                             str(step.task.id),
                             step.task.task_type,
                             priority=step.task.priority,
+                            traceparent=step_traceparent,
                         )
                         await mark_published(db, outbox_entry.id)
                     except Exception as pub_exc:
@@ -128,10 +143,11 @@ async def resolve_and_dispatch_downstream(db: AsyncSession, completed_task_id: U
                             pub_exc,
                         )
                     logger.info(
-                        "Dispatched workflow %s step '%s' (task=%s)",
+                        "Dispatched workflow %s step '%s' (task=%s, trace=%s)",
                         workflow_id,
                         step.step_name,
                         step.task.id,
+                        step_trace_id,
                     )
 
     # Check if entire workflow has completed

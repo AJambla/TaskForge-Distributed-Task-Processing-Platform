@@ -24,13 +24,17 @@ _WORKER_HOSTNAME: str = os.environ.get("WORKER_HOSTNAME", socket.gethostname())
 _HEARTBEAT_INTERVAL_SECONDS = 15
 
 
-async def create_attempt(db: AsyncSession, task: Task, worker_id=None) -> TaskAttempt:
+async def create_attempt(
+    db: AsyncSession, task: Task, worker_id=None, trace_id: str | None = None
+) -> TaskAttempt:
     """Record a new task attempt in PostgreSQL."""
+    resolved_trace_id = trace_id or getattr(task, "trace_id", None)
     attempt = TaskAttempt(
         task_id=task.id,
         attempt_number=task.attempt_count,
         worker_id=worker_id,
         started_at=datetime.now(timezone.utc),
+        trace_id=resolved_trace_id,
     )
     db.add(attempt)
     await db.flush()
