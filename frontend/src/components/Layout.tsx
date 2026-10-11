@@ -4,7 +4,6 @@ import {
   Activity,
   BarChart3,
   ChevronUp,
-  KeyRound,
   Layers,
   LayoutDashboard,
   ListChecks,
@@ -114,9 +113,6 @@ export default function Layout() {
       <div className="sidenav__foot" ref={footRef}>
         {profileOpen && (
           <div className="profile-menu" role="menu">
-            <Link to="/app/api-keys" className="profile-menu__item" role="menuitem">
-              <KeyRound size={14} /> API Keys
-            </Link>
             <Link to="/app/settings" className="profile-menu__item" role="menuitem">
               <Settings size={14} /> Settings
             </Link>

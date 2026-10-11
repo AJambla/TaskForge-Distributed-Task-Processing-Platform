@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   BarChart3,
-  KeyRound,
   Layers,
   LayoutDashboard,
   ListChecks,
@@ -39,7 +38,6 @@ const PAGES: Array<{ label: string; to: string; icon: React.ReactNode; admin?: b
   { label: "Queues", to: "/app/queues", icon: <Layers size={15} /> },
   { label: "Workers", to: "/app/workers", icon: <Server size={15} /> },
   { label: "Metrics", to: "/app/metrics", icon: <BarChart3 size={15} />, admin: true },
-  { label: "API Keys", to: "/app/api-keys", icon: <KeyRound size={15} /> },
   { label: "Activity", to: "/app/activity", icon: <Activity size={15} /> },
   { label: "Settings", to: "/app/settings", icon: <Settings size={15} /> },
 ];

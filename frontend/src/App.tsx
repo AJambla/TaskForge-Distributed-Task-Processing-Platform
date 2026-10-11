@@ -10,7 +10,6 @@ import TaskDetail from "./pages/dashboard/TaskDetail";
 import Workers from "./pages/dashboard/Workers";
 import WorkerDetailPage from "./pages/dashboard/WorkerDetail";
 import Metrics from "./pages/dashboard/Metrics";
-import ApiKeys from "./pages/dashboard/ApiKeys";
 import Overview from "./pages/dashboard/Overview";
 import Queues from "./pages/dashboard/Queues";
 import Activity from "./pages/dashboard/Activity";
@@ -51,7 +50,6 @@ function App() {
               <Route path="workers" element={<Workers />} />
               <Route path="workers/:id" element={<WorkerDetailPage />} />
               <Route path="metrics" element={<Metrics />} />
-              <Route path="api-keys" element={<ApiKeys />} />
               <Route path="activity" element={<Activity />} />
               <Route path="settings" element={<Settings />} />
             </Route>

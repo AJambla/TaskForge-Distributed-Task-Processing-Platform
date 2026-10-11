@@ -5,7 +5,7 @@ import {
   CalendarClock,
   Zap,
   Fingerprint,
-  KeyRound,
+  Workflow,
   Layers,
   Server,
   Activity,
@@ -124,9 +124,9 @@ const PLATFORM_FEATURES: Feature[] = [
     body: "Safe retries at the API boundary: duplicate submissions with the same key collapse into a single task.",
   },
   {
-    icon: <KeyRound size={18} />,
-    title: "API keys",
-    body: "Programmatic keys with visible prefixes, last-used tracking and one-click revocation from the console.",
+    icon: <Workflow size={18} />,
+    title: "Workflows & DAGs",
+    body: "Chain multi-step task workflows with automated step transitions and reliable failure recovery.",
   },
   {
     icon: <Layers size={18} />,
