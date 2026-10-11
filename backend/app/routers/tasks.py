@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -48,6 +48,7 @@ async def create_task(
     current_user: CurrentUser,
     db: DBSession,
     rate_limit: Annotated[None, Depends(make_rate_limiter(get_settings().rate_limit_task_submission_per_minute))],
+    response: Response = None,
     idempotency_key_header: Annotated[
         str | None,
         Header(alias="Idempotency-Key", description="Unique request idempotency key."),
@@ -70,6 +71,17 @@ async def create_task(
             str(current_user.id), idempotency_key
         )
         if already:
+            existing_result = await db.execute(
+                select(Task).where(
+                    Task.user_id == current_user.id,
+                    Task.idempotency_key == idempotency_key,
+                )
+            )
+            existing_task = existing_result.scalar_one_or_none()
+            if existing_task:
+                if response:
+                    response.headers["Idempotent-Replayed"] = "true"
+                return TaskResponse.model_validate(existing_task)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
@@ -107,6 +119,17 @@ async def create_task(
         await db.refresh(task)
     except IntegrityError:
         await db.rollback()
+        existing_result = await db.execute(
+            select(Task).where(
+                Task.user_id == current_user.id,
+                Task.idempotency_key == idempotency_key,
+            )
+        )
+        existing_task = existing_result.scalar_one_or_none()
+        if existing_task:
+            if response:
+                response.headers["Idempotent-Replayed"] = "true"
+            return TaskResponse.model_validate(existing_task)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
