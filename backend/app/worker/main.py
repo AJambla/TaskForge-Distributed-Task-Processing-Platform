@@ -160,9 +160,12 @@ async def create_attempt(db, task: Task, worker_id=None) -> TaskAttempt:
     return attempt
 
 
-async def _mark_success(db, task: Task, attempt: TaskAttempt, worker_id=None) -> None:
+async def _mark_success(db, task: Task, attempt: TaskAttempt, worker_id=None, result=None) -> None:
     task.status = "succeeded"
     task.completed_at = datetime.now(timezone.utc)
+    if isinstance(result, dict):
+        task.result = result
+        attempt.result = result
     attempt.outcome = "success"
     attempt.finished_at = datetime.now(timezone.utc)
     attempt.error_message = None
@@ -330,7 +333,7 @@ async def consume_task(
                 )
             elapsed = asyncio.get_event_loop().time() - start
             task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-            await _mark_success(db, task, attempt, worker_id=worker_id)
+            await _mark_success(db, task, attempt, worker_id=worker_id, result=result)
             tasks_processed_total.labels(
                 outcome="success", task_type=task_type
             ).inc()

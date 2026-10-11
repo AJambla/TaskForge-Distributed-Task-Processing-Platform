@@ -109,6 +109,7 @@ class TaskResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    result: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True}
 

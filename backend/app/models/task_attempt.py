@@ -46,6 +46,7 @@ class TaskAttempt(Base):
     outcome: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
