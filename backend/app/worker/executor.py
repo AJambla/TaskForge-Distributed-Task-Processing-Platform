@@ -20,6 +20,11 @@ _TIMEOUT_MAP: dict[str, str] = {
 
 def get_timeout(task_type: str) -> int:
     """Retrieve configured timeout for task type."""
+    from app.worker.handlers import get_handler_metadata
+    meta = get_handler_metadata(task_type)
+    if meta and "timeout_seconds" in meta:
+        return int(meta["timeout_seconds"])
+
     setting_name = _TIMEOUT_MAP.get(task_type, "task_webhook_timeout_seconds")
     return getattr(_SETTINGS, setting_name, 30)
 
