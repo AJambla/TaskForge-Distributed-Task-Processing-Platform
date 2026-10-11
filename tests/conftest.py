@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # tests/integration/conftest.py operate on the same DB. Must run before any
 # app import below, since Settings is cached at import time.
 _DEFAULT_URL = (
-    "postgresql+asyncpg://taskforge:taskforge_dev_secret@localhost:5432/taskforge"
+    "postgresql+asyncpg://taskforge:taskforge@localhost:5432/taskforge"
 )
 _test_url = os.environ.get("TEST_DATABASE_URL") or (
     os.environ.get("DATABASE_URL", _DEFAULT_URL).rsplit("/", 1)[0]

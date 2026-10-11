@@ -1,14 +1,18 @@
 """TaskForge application configuration via pydantic-settings."""
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+_ROOT_ENV = _ROOT_DIR / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_ROOT_ENV, ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -34,15 +38,15 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Database
-    database_url: str = "postgresql+asyncpg://taskforge:taskforge_dev_secret@localhost:5432/taskforge"
+    database_url: str = "postgresql+asyncpg://taskforge:taskforge@localhost:5432/taskforge"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
     # RabbitMQ
-    rabbitmq_url: str = "amqp://taskforge:taskforge_dev_secret@localhost:5672/taskforge"
+    rabbitmq_url: str = "amqp://taskforge:taskforge@localhost:5672/taskforge"
     rabbitmq_vhost: str = "taskforge"
-    rabbitmq_management_url: str = "http://taskforge:taskforge_dev_secret@rabbitmq:15672"
+    rabbitmq_management_url: str = "http://taskforge:taskforge@rabbitmq:15672"
 
     # JWT
     jwt_secret_key: str = "change_me_generate_a_real_secret_here"

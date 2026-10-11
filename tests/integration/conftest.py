@@ -23,7 +23,7 @@ from app.models.base import Base
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://taskforge:taskforge_dev_secret@localhost:5432/taskforge_test",
+    "postgresql+asyncpg://taskforge:taskforge@localhost:5432/taskforge_test",
 )
 engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
