@@ -61,11 +61,20 @@ async def create_task(
         alias="Idempotency-Key",
         description="Alternative query idempotency key for backward compatibility.",
     ),
+    traceparent_header: Annotated[
+        str | None,
+        Header(alias="traceparent", description="W3C Trace Context traceparent header (IMP-20)."),
+    ] = None,
 ) -> TaskResponse:
     """Submit a task for processing with idempotency protection."""
     # Reject while backpressuring, before any state is written, so a 429
     # never leaves a queued task row with no queued message.
     await check_backpressure()
+
+    from app.core.tracing import create_traceparent
+    traceparent = traceparent_header or create_traceparent()
+    if response:
+        response.headers["traceparent"] = traceparent
 
     idempotency_key = idempotency_key_header or idempotency_key_query or body.idempotency_key
 
@@ -163,7 +172,12 @@ async def create_task(
     # Otherwise publish immediately (worker handles immediate or delayed retry-parking).
     if should_publish and outbox_entry is not None:
         try:
-            await publish_task(str(task.id), body.task_type.value, priority=body.priority)
+            await publish_task(
+                str(task.id),
+                body.task_type.value,
+                priority=body.priority,
+                traceparent=traceparent,
+            )
             outbox_entry.status = "published"
             outbox_entry.processed_at = datetime.now(timezone.utc)
             await db.commit()

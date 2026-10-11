@@ -295,7 +295,7 @@ async def _set_worker_offline(db, worker_id) -> None:
 
 
 async def consume_task(
-    db, task_id: str, task_type: str, worker_id=None
+    db, task_id: str, task_type: str, worker_id=None, traceparent: str | None = None
 ) -> tuple[str, int, int, int | None]:
     """Process a single task.
 
@@ -304,6 +304,9 @@ async def consume_task(
         defer_seconds is set only for the "scheduled" status, telling the
         caller how long until the task's future run_at comes due.
     """
+    from app.core.tracing import extract_trace_context
+    trace_id, span_id = extract_trace_context({"traceparent": traceparent} if traceparent else None)
+
     result = await db.execute(
         select(Task)
         .where(Task.id == task_id)
@@ -311,17 +314,18 @@ async def consume_task(
     )
     task = result.scalar_one_or_none()
     if not task:
-        logger.warning("Task %s not found in DB — skipping.", task_id)
+        logger.warning("[trace=%s] Task %s not found in DB — skipping.", trace_id, task_id)
         return "not_found", 0, 0, None
 
     if task.status in ("cancelled", "succeeded"):
-        logger.info("Task %s already terminal — skipping.", task_id)
+        logger.info("[trace=%s] Task %s already terminal — skipping.", trace_id, task_id)
         return task.status, task.attempt_count, task.max_attempts, None
 
     if task.run_at and task.run_at > datetime.now(timezone.utc):
         defer_seconds = int((task.run_at - datetime.now(timezone.utc)).total_seconds()) + 1
         logger.info(
-            "Task %s scheduled for %s — deferring %ds.",
+            "[trace=%s] Task %s scheduled for %s — deferring %ds.",
+            trace_id,
             task_id,
             task.run_at.isoformat(),
             defer_seconds,
@@ -339,7 +343,8 @@ async def consume_task(
     await db.commit()
 
     logger.info(
-        "Processing task %s (type=%s, attempt=%d, status=%s, worker=%s)",
+        "[trace=%s] Processing task %s (type=%s, attempt=%d, status=%s, worker=%s)",
+        trace_id,
         task_id,
         task_type,
         attempt.attempt_number,
@@ -435,10 +440,17 @@ async def _publish_retry(
 async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> None:
     task_id = message.body.decode("utf-8")
     task_type = message.headers.get("x-task-type", "unknown")
+    traceparent = message.headers.get("traceparent")
     try:
         async with AsyncSessionLocal() as db:
             final_status, attempt_count, max_attempts, defer_seconds = (
-                await consume_task(db, task_id, task_type, worker_id=worker_id)
+                await consume_task(
+                    db,
+                    task_id,
+                    task_type,
+                    worker_id=worker_id,
+                    traceparent=traceparent,
+                )
             )
 
         # Terminal states must not be re-published — only failures retry.
