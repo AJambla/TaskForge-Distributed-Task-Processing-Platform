@@ -77,8 +77,27 @@ async def create_task(
     # never leaves a queued task row with no queued message.
     await check_backpressure()
 
-    from app.core.tracing import create_traceparent
-    traceparent = traceparent_header or create_traceparent()
+    from app.core.tracing import (
+        create_traceparent,
+        extract_context_from_carrier,
+        get_current_trace_id,
+        inject_carrier,
+        parse_traceparent,
+    )
+    # Determine W3C trace context: check active OpenTelemetry span first, then inbound header
+    active_trace_id = get_current_trace_id()
+    if active_trace_id:
+        carrier = inject_carrier()
+        traceparent = carrier.get("traceparent") or create_traceparent(trace_id=active_trace_id)
+        task_trace_id = active_trace_id
+    elif traceparent_header:
+        traceparent = traceparent_header
+        t_id, _, _ = parse_traceparent(traceparent)
+        task_trace_id = t_id or create_traceparent().split("-")[1]
+    else:
+        traceparent = create_traceparent()
+        task_trace_id = traceparent.split("-")[1]
+
     if response:
         response.headers["traceparent"] = traceparent
 
@@ -99,7 +118,7 @@ async def create_task(
             if existing_task:
                 if response:
                     response.headers["Idempotent-Replayed"] = "true"
-                return TaskResponse.model_validate(existing_task)
+                return TaskResponse.from_task(existing_task)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
@@ -130,6 +149,7 @@ async def create_task(
         max_attempts=body.max_attempts,
         run_at=run_at,
         recurrence_rule=body.recurrence_rule,
+        trace_id=task_trace_id,
     )
     db.add(task)
     await db.flush()
@@ -143,6 +163,7 @@ async def create_task(
             task_type=task.task_type,
             payload=task.payload,
             priority=task.priority,
+            traceparent=traceparent,
             status="pending",
         )
         db.add(outbox_entry)
@@ -198,7 +219,7 @@ async def create_task(
             str(current_user.id), idempotency_key, str(task.id)
         )
 
-    return TaskResponse.model_validate(task)
+    return TaskResponse.from_task(task)
 
 
 @router.post(
@@ -221,6 +242,9 @@ async def create_tasks_bulk(
     created_tasks: list[Task] = []
     outbox_entries: list[TaskOutbox] = []
 
+    bulk_trace_id = active_trace_id or create_traceparent().split("-")[1]
+    bulk_traceparent = create_traceparent(trace_id=bulk_trace_id)
+
     for req in body.tasks:
         run_at = req.run_at or now
         task = Task(
@@ -232,6 +256,7 @@ async def create_tasks_bulk(
             max_attempts=req.max_attempts,
             run_at=run_at,
             recurrence_rule=req.recurrence_rule,
+            trace_id=bulk_trace_id,
         )
         db.add(task)
         created_tasks.append(task)
@@ -246,6 +271,7 @@ async def create_tasks_bulk(
                 task_type=task.task_type,
                 payload=task.payload,
                 priority=task.priority,
+                traceparent=bulk_traceparent,
                 status="pending",
             )
             db.add(outbox_entry)
@@ -256,7 +282,12 @@ async def create_tasks_bulk(
     # Best-effort immediate publication
     for task, outbox_entry in zip(created_tasks, outbox_entries):
         try:
-            await publish_task(str(task.id), task.task_type, priority=task.priority)
+            await publish_task(
+                str(task.id),
+                task.task_type,
+                priority=task.priority,
+                traceparent=bulk_traceparent,
+            )
             outbox_entry.status = "published"
             outbox_entry.processed_at = datetime.now(timezone.utc)
         except Exception:
@@ -266,7 +297,7 @@ async def create_tasks_bulk(
 
     return TaskBulkResponse(
         submitted_count=len(created_tasks),
-        tasks=[TaskResponse.model_validate(t) for t in created_tasks],
+        tasks=[TaskResponse.from_task(t) for t in created_tasks],
     )
 
 
@@ -392,7 +423,7 @@ async def list_tasks(
         next_cursor = base64.urlsafe_b64encode(raw_cursor.encode("utf-8")).decode("utf-8")
 
     return TaskListResponse(
-        data=[TaskResponse.model_validate(t) for t in tasks],
+        data=[TaskResponse.from_task(t) for t in tasks],
         pagination=PaginationInfo(page=page, page_size=page_size, total=total, next_cursor=next_cursor),
     )
 
@@ -527,7 +558,7 @@ async def get_task(
                 }
             },
         )
-    return TaskResponse.model_validate(task)
+    return TaskResponse.from_task(task)
 
 
 @router.post(
@@ -583,7 +614,7 @@ async def cancel_task(
     task.completed_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(task)
-    return TaskResponse.model_validate(task)
+    return TaskResponse.from_task(task)
 
 
 @router.post(
@@ -672,7 +703,7 @@ async def retry_task(
                 }
             },
         )
-    return TaskResponse.model_validate(task)
+    return TaskResponse.from_task(task)
 
 
 @router.get("/{task_id}/events", summary="Stream task state changes via SSE (IMP-19)")

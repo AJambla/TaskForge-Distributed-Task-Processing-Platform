@@ -51,6 +51,7 @@ class Task(Base):
         DateTime(timezone=True), nullable=True
     )
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     artifacts = relationship(
         "Artifact", back_populates="task", cascade="all, delete-orphan", lazy="selectin"
     )

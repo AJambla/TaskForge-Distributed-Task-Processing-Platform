@@ -14,6 +14,7 @@ class TaskAttemptResponse(BaseModel):
     finished_at: datetime | None
     outcome: str | None
     error_message: str | None
+    trace_id: str | None = None
 
     model_config = {"from_attributes": True}
 

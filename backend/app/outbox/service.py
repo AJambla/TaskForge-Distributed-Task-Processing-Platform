@@ -30,6 +30,7 @@ async def create_outbox_event(
     payload: dict,
     priority: int = 0,
     event_type: str = "task_created",
+    traceparent: str | None = None,
 ) -> TaskOutbox:
     """Insert a new pending outbox event inside the active SQL transaction."""
     event = TaskOutbox(
@@ -38,6 +39,7 @@ async def create_outbox_event(
         payload=payload,
         priority=priority,
         event_type=event_type,
+        traceparent=traceparent,
         status="pending",
         retry_count=0,
         next_attempt_at=datetime.now(timezone.utc),
