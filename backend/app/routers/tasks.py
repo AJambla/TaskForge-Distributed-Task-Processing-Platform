@@ -241,7 +241,8 @@ async def create_tasks_bulk(
 
     created_tasks: list[Task] = []
     outbox_entries: list[TaskOutbox] = []
-
+    from app.core.tracing import create_traceparent, get_current_trace_id
+    active_trace_id = get_current_trace_id()
     bulk_trace_id = active_trace_id or create_traceparent().split("-")[1]
     bulk_traceparent = create_traceparent(trace_id=bulk_trace_id)
 
