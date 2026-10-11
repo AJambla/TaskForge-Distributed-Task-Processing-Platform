@@ -24,15 +24,29 @@ def _resize_image_sync(
     image_bytes: bytes,
     max_dimension: int,
 ) -> tuple[bytes, str]:
-    img = Image.open(io.BytesIO(image_bytes))
+    stream = io.BytesIO(image_bytes)
+    img = Image.open(stream)
+
+    # Use draft downsampling on JPEG images before full decode
+    if getattr(img, "format", None) == "JPEG" and (img.width > max_dimension * 2 or img.height > max_dimension * 2):
+        try:
+            img.draft("RGB", (max_dimension * 2, max_dimension * 2))
+        except Exception:
+            pass
+
     img = img.convert("RGB") if img.mode == "RGBA" else img
 
     if img.width > max_dimension or img.height > max_dimension:
+        # Fast BOX pre-downscale if image is more than 3x target size, then final high-quality Lanczos
+        ratio = max(img.width / max_dimension, img.height / max_dimension)
+        if ratio > 3.0:
+            intermediate_size = (int(img.width / (ratio / 2)), int(img.height / (ratio / 2)))
+            img = img.resize(intermediate_size, Image.BOX)
         img.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
 
     buf = io.BytesIO()
     fmt = "JPEG" if img.mode in ("RGB", "L") else img.format or "PNG"
-    img.save(buf, format=fmt)
+    img.save(buf, format=fmt, optimize=True)
     resized_bytes = buf.getvalue()
     return resized_bytes, fmt
 
