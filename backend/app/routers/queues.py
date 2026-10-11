@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from sqlalchemy import extract, func, select
 
 from app.core.deps import CurrentUser, DBSession
-from app.core.rabbitmq import get_queue_depths, publish_task
+from app.core.rabbitmq import get_queue_depths, publish_task, purge_queue
 from app.models.task import Task
 
 logger = logging.getLogger(__name__)
@@ -182,6 +182,7 @@ async def redrive_dlq(
     tasks = result.scalars().all()
 
     redriven_ids = []
+    types_redriven = set()
     for task in tasks:
         task.status = "queued"
         task.attempt_count = 0
@@ -190,8 +191,15 @@ async def redrive_dlq(
         task.run_at = datetime.now(timezone.utc)
         await publish_task(str(task.id), task.task_type)
         redriven_ids.append(str(task.id))
+        types_redriven.add(task.task_type)
 
     await db.commit()
+
+    # Drain messages from RabbitMQ DLQs so the broker queue doesn't remain cluttered (IMP-10)
+    for t_type in types_redriven:
+        dlq_name = f"tasks.{t_type}.dlq"
+        await purge_queue(dlq_name)
+
     logger.info("Redrove %d dead-letter tasks back to queues.", len(redriven_ids))
     return {
         "redriven_count": len(redriven_ids),

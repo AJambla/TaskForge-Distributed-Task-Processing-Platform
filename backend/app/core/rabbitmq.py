@@ -139,6 +139,19 @@ async def publish_task(task_id: str, task_type: str, priority: int = 0) -> None:
     await publisher.publish(task_id, task_type, priority=priority)
 
 
+async def purge_queue(queue_name: str) -> int:
+    """Purge all messages from a queue, returning the count of messages purged."""
+    publisher = await get_publisher()
+    if publisher.channel is None or publisher.channel.is_closed:
+        await publisher.connect()
+    try:
+        queue = await publisher.channel.get_queue(queue_name, ensure=False)
+        return await queue.purge()
+    except Exception as exc:
+        logger.warning("Could not purge queue %s: %s", queue_name, exc)
+        return 0
+
+
 async def get_queue_depths() -> dict[str, int]:
     """Return {queue_name: message_count} for all taskforge queues.
 
