@@ -1,6 +1,7 @@
 """Models package — imports all models so Alembic autogenerate can detect them."""
 from app.models.api_key import APIKey
 from app.models.base import Base
+from app.models.organization import Organization, OrganizationMembership
 from app.models.refresh_token import RefreshToken
 from app.models.schedule import Schedule
 from app.models.task import Task
@@ -12,6 +13,8 @@ from app.models.worker_registration import WorkerRegistration
 __all__ = [
     "APIKey",
     "Base",
+    "Organization",
+    "OrganizationMembership",
     "RefreshToken",
     "Schedule",
     "Task",

@@ -56,6 +56,12 @@ class Task(Base):
         ForeignKey("schedules.id", ondelete="SET NULL"),
         nullable=True,
     )
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
