@@ -95,7 +95,7 @@ export default function (data) {
     payload = {
       task_type: 'email_send',
       payload: {
-        to_email: 'recipient@example.com',
+        to: 'recipient@example.com',
         subject: 'Load test email',
         body: 'TaskForge load testing payload content',
       },
@@ -104,7 +104,7 @@ export default function (data) {
     payload = {
       task_type: 'image_resize',
       payload: {
-        image_url: 'https://via.placeholder.com/300',
+        source_url: 'https://via.placeholder.com/300',
         width: 150,
         height: 150,
       },
