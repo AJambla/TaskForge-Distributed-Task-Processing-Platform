@@ -16,6 +16,7 @@ from sqlalchemy import (
     Index,
     SmallInteger,
     String,
+    Text,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -36,6 +37,9 @@ class TaskOutbox(Base):
         nullable=False,
     )
     task_type: Mapped[str] = mapped_column(String, nullable=False)
+    event_type: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="task_created", server_default="task_created"
+    )
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     priority: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
     status: Mapped[str] = mapped_column(
@@ -48,6 +52,13 @@ class TaskOutbox(Base):
     processed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -55,6 +66,7 @@ class TaskOutbox(Base):
             name="ck_task_outbox_status",
         ),
         Index("ix_task_outbox_pending", "status", "created_at"),
+        Index("ix_task_outbox_claimable", "status", "next_attempt_at", "created_at"),
     )
 
     task: Mapped["Task"] = relationship("Task")  # type: ignore[name-defined] # noqa: F821
