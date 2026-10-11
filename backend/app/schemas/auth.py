@@ -24,6 +24,14 @@ class RegisterResponse(BaseModel):
     email: str
 
 
+class UserResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    role: str
+
+    model_config = {"from_attributes": True}
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

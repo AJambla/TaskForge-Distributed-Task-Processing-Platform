@@ -32,6 +32,7 @@ from app.schemas.auth import (
     RefreshResponse,
     RegisterRequest,
     RegisterResponse,
+    UserResponse,
 )
 
 router = APIRouter()
@@ -103,7 +104,9 @@ async def login(
             },
         )
 
-    access_token, access_expires = create_access_token(user.id, user.role)
+    access_token, access_expires = create_access_token(
+        user.id, user.role, email=user.email
+    )
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token(user.id)
 
     db.add(
@@ -169,7 +172,9 @@ async def refresh(
             },
         )
 
-    access_token, access_expires = create_access_token(user.id, user.role)
+    access_token, access_expires = create_access_token(
+        user.id, user.role, email=user.email
+    )
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token(user.id)
 
     db.add(
@@ -190,6 +195,18 @@ async def refresh(
         access_token=access_token,
         refresh_token=raw_refresh,
         expires_in=expires_in,
+    )
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_profile(
+    current_user: CurrentUser,
+) -> UserResponse:
+    """Return the currently authenticated user profile."""
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        role=current_user.role,
     )
 
 

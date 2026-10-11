@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { type User, type LoginCredentials, type RegisterCredentials, type LoginResponse } from "../types";
 import client from "../api/client";
 
@@ -31,14 +31,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!token) return { user: null, ok: false };
     const decoded = decodeJwt(token);
     if (!decoded) return { user: null, ok: false };
+    const savedEmail = localStorage.getItem("user_email") || decoded.email || "";
     return {
-      user: { id: decoded.sub, email: decoded.email || "", role: decoded.role },
+      user: { id: decoded.sub, email: savedEmail, role: decoded.role },
       ok: true,
     };
   };
   const [restored] = useState(restore);
   const [user, setUser] = useState<User | null>(restored.user);
   const [isAuthenticated, setIsAuthenticated] = useState(restored.ok);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      client
+        .get<User>("/auth/me")
+        .then((res) => {
+          if (res.data) {
+            setUser(res.data);
+            if (res.data.email) {
+              localStorage.setItem("user_email", res.data.email);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [isAuthenticated]);
 
   const login = async (credentials: LoginCredentials) => {
     const response = await client.post<LoginResponse>("/auth/login", credentials);
@@ -47,8 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("refresh_token", refresh_token);
     localStorage.setItem("access_expires_in", String(expires_in));
     const decoded = decodeJwt(access_token);
+    const userEmail = decoded?.email || credentials.email;
+    localStorage.setItem("user_email", userEmail);
     if (decoded) {
-      setUser({ id: decoded.sub, email: credentials.email, role: decoded.role });
+      setUser({ id: decoded.sub, email: userEmail, role: decoded.role });
       setIsAuthenticated(true);
     }
   };
@@ -66,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("access_token");
       localStorage.removeItem("refresh_token");
       localStorage.removeItem("access_expires_in");
+      localStorage.removeItem("user_email");
       setUser(null);
       setIsAuthenticated(false);
     }

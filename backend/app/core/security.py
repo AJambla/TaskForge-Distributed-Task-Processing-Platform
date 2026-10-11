@@ -77,7 +77,9 @@ def hash_api_key(raw_key: str) -> str:
 
 # ─── JWT helpers ─────────────────────────────────────────────────────────────
 
-def create_access_token(user_id: uuid.UUID, role: str) -> tuple[str, datetime]:
+def create_access_token(
+    user_id: uuid.UUID, role: str, email: str | None = None
+) -> tuple[str, datetime]:
     """Create a short-lived JWT access token.
 
     Returns (token_string, expiry_datetime).
@@ -85,7 +87,7 @@ def create_access_token(user_id: uuid.UUID, role: str) -> tuple[str, datetime]:
     expires = datetime.now(timezone.utc) + timedelta(
         minutes=settings.jwt_access_token_expire_minutes
     )
-    payload = {
+    payload: dict = {
         "sub": str(user_id),
         "role": role,
         "type": "access",
@@ -93,6 +95,8 @@ def create_access_token(user_id: uuid.UUID, role: str) -> tuple[str, datetime]:
         "iat": datetime.now(timezone.utc),
         "jti": str(uuid.uuid4()),
     }
+    if email:
+        payload["email"] = email
     token = jwt.encode(
         payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm
     )
