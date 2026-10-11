@@ -51,6 +51,11 @@ class Task(Base):
         DateTime(timezone=True), nullable=True
     )
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("schedules.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -76,6 +81,7 @@ class Task(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="tasks")  # noqa: F821
+    schedule: Mapped["Schedule | None"] = relationship("Schedule", back_populates="tasks")  # type: ignore[name-defined] # noqa: F821
     attempts: Mapped[list["TaskAttempt"]] = relationship(  # noqa: F821
         "TaskAttempt",
         back_populates="task",

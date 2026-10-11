@@ -124,22 +124,33 @@ async def _reschedule_recurring_tasks() -> int:
                     max_attempts=task.max_attempts,
                     run_at=next_run_at,
                     recurrence_rule=task.recurrence_rule,
+                    schedule_id=task.schedule_id,
                 )
                 async with SchedulerSessionLocal() as new_db:
                     # Clear recurrence_rule on the current task so it does not trigger duplicate re-scheduling
                     current_task = await new_db.get(Task, task.id)
                     if current_task is not None:
                         current_task.recurrence_rule = None
+
+                    # If linked to a parent schedule, update its last/next run metadata
+                    if task.schedule_id:
+                        from app.models.schedule import Schedule
+                        parent_schedule = await new_db.get(Schedule, task.schedule_id)
+                        if parent_schedule:
+                            parent_schedule.last_run_at = datetime.now(timezone.utc)
+                            parent_schedule.next_run_at = next_run_at
+
                     new_db.add(new_task)
                     await new_db.commit()
                     # Publish the currently due task execution
                     await publisher.publish(str(task.id), task.task_type)
                 reScheduled += 1
                 logger.info(
-                    "Re-scheduled task %s (published current, cloned new task %s for next run_at=%s)",
+                    "Re-scheduled task %s (published current, cloned new task %s for next run_at=%s, schedule=%s)",
                     task.id,
                     new_task.id,
                     next_run_at,
+                    task.schedule_id,
                 )
 
             except Exception:
