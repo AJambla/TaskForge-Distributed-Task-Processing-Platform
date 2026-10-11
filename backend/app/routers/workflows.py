@@ -82,16 +82,27 @@ async def create_workflow(
         )
         db.add(step)
         if is_root:
-            ready_tasks_to_publish.append((task, step_in.task_type, step_in.priority))
+            from app.outbox.service import create_outbox_event
+            outbox_entry = await create_outbox_event(
+                db=db,
+                task_id=task.id,
+                task_type=step_in.task_type,
+                payload=step_in.payload,
+                priority=step_in.priority,
+                event_type="workflow_root_step",
+            )
+            ready_tasks_to_publish.append((task, step_in.task_type, step_in.priority, outbox_entry))
 
     await db.commit()
 
     # Publish root tasks
-    for task_obj, t_type, prio in ready_tasks_to_publish:
+    for task_obj, t_type, prio, outbox_item in ready_tasks_to_publish:
         try:
             await publish_task(str(task_obj.id), t_type, priority=prio)
+            from app.outbox.service import mark_published
+            await mark_published(db, outbox_item.id)
         except Exception as exc:
-            logger.warning("Failed to publish root workflow task %s: %s", task_obj.id, exc)
+            logger.warning("Failed to publish root workflow task %s: %s (outbox relay will retry)", task_obj.id, exc)
 
     # Reload with steps
     res = await db.execute(
