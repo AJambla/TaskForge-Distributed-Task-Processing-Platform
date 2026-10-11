@@ -1,16 +1,38 @@
-import { useMemo } from "react";
-import { AlertOctagon, Layers, RefreshCcw, Timer } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertOctagon, Layers, RefreshCcw, Timer, RotateCw } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
 import StatCard from "../../components/ui/StatCard";
 import { BarRow } from "../../components/ui/Charts";
+import { Button } from "../../components/ui/Button";
+import client from "../../api/client";
 import { useQueueStats, useQueues } from "../../api/queries";
 import { formatNumber, formatSeconds, relativeTime } from "../../lib/format";
 import { EmptyState } from "../../components/ui/Field";
 
 export default function Queues() {
+  const queryClient = useQueryClient();
   const queuesQuery = useQueues();
   const statsQuery = useQueueStats();
+  const [redriveMessage, setRedriveMessage] = useState<string | null>(null);
+
+  const redriveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await client.post<{ redriven_count: number }>("/queues/dlq/redrive");
+      return res.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["queues"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setRedriveMessage(`Redrove ${data.redriven_count} tasks`);
+      setTimeout(() => setRedriveMessage(null), 4000);
+    },
+    onError: (err: any) => {
+      setRedriveMessage(err?.response?.data?.detail || "Redrive failed");
+      setTimeout(() => setRedriveMessage(null), 4000);
+    },
+  });
 
   const totals = useMemo(() => {
     const queues = queuesQuery.data ?? [];
@@ -32,11 +54,31 @@ export default function Queues() {
         title="Queues"
         subtitle="Live RabbitMQ depths across main, retry and dead-letter queues"
         actions={
-          queuesQuery.data && (
-            <span className="mono text-xs" style={{ color: "var(--subtle)" }}>
-              refreshing every 5s
-            </span>
-          )
+          <div className="flex items-center gap-3">
+            {redriveMessage && (
+              <span className="mono text-xs" style={{ color: "var(--accent)" }}>
+                {redriveMessage}
+              </span>
+            )}
+            <Button
+              variant="quiet"
+              size="sm"
+              disabled={redriveMutation.isPending || totals.dlq === 0}
+              onClick={() => redriveMutation.mutate()}
+            >
+              <RotateCw
+                size={13}
+                className={redriveMutation.isPending ? "animate-spin" : ""}
+                style={{ display: "inline", marginRight: "6px" }}
+              />
+              {redriveMutation.isPending ? "Redriving..." : "Redrive DLQ"}
+            </Button>
+            {queuesQuery.data && (
+              <span className="mono text-xs" style={{ color: "var(--subtle)" }}>
+                refreshing every 5s
+              </span>
+            )}
+          </div>
         }
       />
 
