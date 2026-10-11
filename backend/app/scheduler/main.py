@@ -126,47 +126,45 @@ async def _reschedule_recurring_tasks() -> int:
                     )
                     continue
 
-                schedule_tz = "UTC"
-                if task.schedule_id:
-                    from app.models.schedule import Schedule
-                    async with SchedulerSessionLocal() as tz_db:
-                        parent_sched = await tz_db.get(Schedule, task.schedule_id)
-                        if parent_sched and parent_sched.timezone:
-                            schedule_tz = parent_sched.timezone
-
-                next_run_at = _next_occurrence(task.run_at, task.recurrence_rule, tz_name=schedule_tz)
-                if next_run_at is None:
-                    logger.warning(
-                        "Could not parse recurrence_rule for task %s: %r",
-                        task.id,
-                        task.recurrence_rule,
-                    )
-                    continue
-
-                new_task = Task(
-                    user_id=task.user_id,
-                    task_type=task.task_type,
-                    payload=task.payload,
-                    status="queued",
-                    priority=task.priority,
-                    max_attempts=task.max_attempts,
-                    run_at=next_run_at,
-                    recurrence_rule=task.recurrence_rule,
-                    schedule_id=task.schedule_id,
-                )
                 async with SchedulerSessionLocal() as new_db:
+                    schedule_tz = "UTC"
+                    parent_schedule = None
+                    if task.schedule_id:
+                        from app.models.schedule import Schedule
+                        parent_schedule = await new_db.get(Schedule, task.schedule_id)
+                        if parent_schedule and parent_schedule.timezone:
+                            schedule_tz = parent_schedule.timezone
+
+                    next_run_at = _next_occurrence(task.run_at, task.recurrence_rule, tz_name=schedule_tz)
+                    if next_run_at is None:
+                        logger.warning(
+                            "Could not parse recurrence_rule for task %s: %r",
+                            task.id,
+                            task.recurrence_rule,
+                        )
+                        continue
+
+                    new_task = Task(
+                        user_id=task.user_id,
+                        task_type=task.task_type,
+                        payload=task.payload,
+                        status="queued",
+                        priority=task.priority,
+                        max_attempts=task.max_attempts,
+                        run_at=next_run_at,
+                        recurrence_rule=task.recurrence_rule,
+                        schedule_id=task.schedule_id,
+                    )
+
                     # Clear recurrence_rule on the current task so it does not trigger duplicate re-scheduling
                     current_task = await new_db.get(Task, task.id)
                     if current_task is not None:
                         current_task.recurrence_rule = None
 
                     # If linked to a parent schedule, update its last/next run metadata
-                    if task.schedule_id:
-                        from app.models.schedule import Schedule
-                        parent_schedule = await new_db.get(Schedule, task.schedule_id)
-                        if parent_schedule:
-                            parent_schedule.last_run_at = datetime.now(timezone.utc)
-                            parent_schedule.next_run_at = next_run_at
+                    if parent_schedule:
+                        parent_schedule.last_run_at = datetime.now(timezone.utc)
+                        parent_schedule.next_run_at = next_run_at
 
                     new_db.add(new_task)
                     await new_db.commit()
