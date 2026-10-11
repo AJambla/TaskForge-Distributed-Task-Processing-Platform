@@ -53,6 +53,7 @@ logger = logging.getLogger("worker")
 EXCHANGE_NAME = "task_main_exchange"
 TASK_TYPES = ["email_send", "image_resize", "webhook_delivery"]
 
+RETRY_BUCKETS: tuple[int, ...] = (5, 10, 20, 40, 60)
 _RETRY_BASE_DELAY_SECONDS = 5
 _RETRY_MAX_DELAY_SECONDS = 60
 
@@ -147,7 +148,12 @@ def _run_handler_in_sandbox(handler, payload) -> object:
 
 def _calculate_retry_delay(attempt_count: int) -> int:
     delay = _RETRY_BASE_DELAY_SECONDS * (2 ** (attempt_count - 1))
-    return min(delay, _RETRY_MAX_DELAY_SECONDS)
+    target = min(delay, _RETRY_MAX_DELAY_SECONDS)
+    # Match the smallest bucket >= target, or max bucket
+    for bucket in RETRY_BUCKETS:
+        if bucket >= target:
+            return bucket
+    return RETRY_BUCKETS[-1]
 
 
 async def create_attempt(db, task: Task, worker_id=None) -> TaskAttempt:
@@ -369,7 +375,13 @@ async def consume_task(
 async def _publish_retry(
     publisher, task_id: str, task_type: str, delay_seconds: int
 ) -> None:
-    delay = max(1, min(delay_seconds, 4_294_967))
+    # Snap delay to known bucket to prevent HoL blocking
+    delay = RETRY_BUCKETS[-1]
+    for bucket in RETRY_BUCKETS:
+        if bucket >= delay_seconds:
+            delay = bucket
+            break
+
     body = task_id.encode("utf-8")
     message = aio_pika.Message(
         body,
@@ -379,15 +391,16 @@ async def _publish_retry(
             "x-task-type": task_type,
             "x-task-id": task_id,
         },
-        expiration=timedelta(milliseconds=delay * 1000),
     )
+    routing_key = f"tasks.{task_type}.retry.{delay}s"
     await publisher.exchange.publish(
         message,
-        routing_key=f"tasks.{task_type}.retry",
+        routing_key=routing_key,
     )
     logger.info(
-        "Published retry for task %s with %ds delay.",
+        "Published retry for task %s to bucket '%s' (%ds delay).",
         task_id,
+        routing_key,
         delay,
     )
 
@@ -516,24 +529,23 @@ async def subscribe_queues(publisher, worker_id=None, shutdown_event=None) -> li
             task_type,
         )
 
-        retry_queue_name = f"tasks.{task_type}.retry"
-        # No consumer on the retry queue on purpose: TTL+DLX is the delayed
-        # delivery mechanism. A per-message expiration is only an expiry
-        # deadline, so any consumer would grab retries before they age.
-        # Expired retries are dead-lettered with routing key `<task_type>`,
-        # which the exchange routes back to the main queue via its binding.
-        retry_queue = await channel.declare_queue(
-            retry_queue_name,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": EXCHANGE_NAME,
-                "x-dead-letter-routing-key": task_type,
-            },
-        )
-        await retry_queue.bind(
-            exchange, routing_key=f"tasks.{task_type}.retry"
-        )
-        logger.info("Declared retry queue '%s' (TTL + DLX).", retry_queue_name)
+        # Declare discrete bucketed retry queues with queue-level x-message-ttl
+        # to prevent head-of-line blocking (IMP-09).
+        for bucket_sec in RETRY_BUCKETS:
+            bucket_queue_name = f"tasks.{task_type}.retry.{bucket_sec}s"
+            bucket_queue = await channel.declare_queue(
+                bucket_queue_name,
+                durable=True,
+                arguments={
+                    "x-dead-letter-exchange": EXCHANGE_NAME,
+                    "x-dead-letter-routing-key": task_type,
+                    "x-message-ttl": bucket_sec * 1000,
+                },
+            )
+            await bucket_queue.bind(
+                exchange, routing_key=f"tasks.{task_type}.retry.{bucket_sec}s"
+            )
+            logger.info("Declared bucketed retry queue '%s' (TTL=%ds).", bucket_queue_name, bucket_sec)
 
         dlq_queue_name = f"tasks.{task_type}.dlq"
         dlq_queue = await channel.declare_queue(

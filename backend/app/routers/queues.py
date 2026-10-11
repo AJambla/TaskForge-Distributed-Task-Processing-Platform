@@ -49,11 +49,11 @@ async def get_queues(
             }
 
         if queue_kind == "main" or queue_kind == "tasks":
-            result[task_type]["main_depth"] = message_count
-        elif queue_kind == "retry":
-            result[task_type]["retry_depth"] = message_count
+            result[task_type]["main_depth"] += message_count
+        elif queue_kind.startswith("retry"):
+            result[task_type]["retry_depth"] += message_count
         elif queue_kind == "dlq":
-            result[task_type]["dlq_depth"] = message_count
+            result[task_type]["dlq_depth"] += message_count
 
     # Add total depth per type
     for type_data in result.values():
