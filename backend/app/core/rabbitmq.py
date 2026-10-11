@@ -166,14 +166,33 @@ async def get_queue_depths() -> dict[str, int]:
 async def check_backpressure() -> None:
     """Raise HTTPException(status=429) if queue depth exceeds threshold.
 
-    Fails open (allows submission) if the management API is unreachable.
+    Reads from Redis cache with a 2-second TTL to avoid hitting RabbitMQ
+    management API on every request. Fails open if check fails.
     """
     settings = get_settings()
     if not settings.backpressure_enabled:
         return
 
-    depths = await get_queue_depths()
-    total = sum(depths.values())
+    total: int | None = None
+    redis_client = None
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        cached = await redis_client.get("backpressure:total_depth")
+        if cached is not None:
+            total = int(cached)
+    except Exception:
+        pass
+
+    if total is None:
+        depths = await get_queue_depths()
+        total = sum(depths.values())
+        if redis_client is not None:
+            try:
+                await redis_client.set("backpressure:total_depth", total, ex=2)
+            except Exception:
+                pass
+
     if total > settings.backpressure_queue_depth_threshold:
         logger.warning(
             "Backpressure triggered: total queue depth %d exceeds threshold %d.",
