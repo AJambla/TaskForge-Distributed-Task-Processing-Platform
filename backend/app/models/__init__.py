@@ -4,6 +4,7 @@ from app.models.base import Base
 from app.models.refresh_token import RefreshToken
 from app.models.task import Task
 from app.models.task_attempt import TaskAttempt
+from app.models.task_outbox import TaskOutbox
 from app.models.user import User
 from app.models.worker_registration import WorkerRegistration
 
@@ -13,6 +14,7 @@ __all__ = [
     "RefreshToken",
     "Task",
     "TaskAttempt",
+    "TaskOutbox",
     "User",
     "WorkerRegistration",
 ]

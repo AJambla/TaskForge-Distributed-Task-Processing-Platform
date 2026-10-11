@@ -114,6 +114,21 @@ async def create_task(
         recurrence_rule=body.recurrence_rule,
     )
     db.add(task)
+    await db.flush()
+
+    should_publish = not (body.recurrence_rule and run_at > now)
+    outbox_entry = None
+    if should_publish:
+        from app.models.task_outbox import TaskOutbox
+        outbox_entry = TaskOutbox(
+            task_id=task.id,
+            task_type=task.task_type,
+            payload=task.payload,
+            priority=task.priority,
+            status="pending",
+        )
+        db.add(outbox_entry)
+
     try:
         await db.commit()
         await db.refresh(task)
@@ -143,24 +158,16 @@ async def create_task(
 
     # For future recurring tasks, let the scheduler dispatch at run_at.
     # Otherwise publish immediately (worker handles immediate or delayed retry-parking).
-    should_publish = not (body.recurrence_rule and run_at > now)
-    if should_publish:
+    if should_publish and outbox_entry is not None:
         try:
             await publish_task(str(task.id), body.task_type.value, priority=body.priority)
-        except Exception:
-            logger.exception("Failed to publish task %s to RabbitMQ", task.id)
-            task.status = TaskStatus.FAILED.value
-            task.completed_at = datetime.now(timezone.utc)
+            outbox_entry.status = "published"
+            outbox_entry.processed_at = datetime.now(timezone.utc)
             await db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "error": {
-                        "code": "QUEUE_UNAVAILABLE",
-                        "message": "Task queue is temporarily unavailable. Please retry.",
-                        "field": None,
-                    }
-                },
+        except Exception:
+            logger.warning(
+                "Immediate publish failed for task %s; outbox relay will retry asynchronously.",
+                task.id,
             )
 
     if idempotency_key:
