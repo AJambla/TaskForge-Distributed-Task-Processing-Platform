@@ -57,14 +57,34 @@ SchedulerSessionLocal = async_sessionmaker(
 )
 
 
-def _next_occurrence(run_at: datetime, recurrence_rule: str) -> datetime | None:
-    """Compute the next run_at from a cron recurrence rule."""
+def _next_occurrence(run_at: datetime, recurrence_rule: str, tz_name: str = "UTC") -> datetime | None:
+    """Compute the next run_at from a cron recurrence rule in the specified timezone (IMP-23).
+
+    Handles DST transitions by evaluating against the local zoneinfo timezone,
+    then normalizing the resulting timestamp back to UTC for database storage.
+    """
     try:
         from croniter import croniter
-        base = run_at.replace(tzinfo=timezone.utc)
-        return croniter(recurrence_rule, base).get_next(datetime)
+        from zoneinfo import ZoneInfo
+
+        try:
+            target_tz = ZoneInfo(tz_name)
+        except Exception:
+            logger.warning("Unknown timezone %r; falling back to UTC", tz_name)
+            target_tz = ZoneInfo("UTC")
+
+        # Convert base run_at to target timezone
+        base_utc = run_at.replace(tzinfo=timezone.utc) if run_at.tzinfo is None else run_at.astimezone(timezone.utc)
+        base_local = base_utc.astimezone(target_tz)
+
+        # Calculate next occurrence in local time
+        next_local = croniter(recurrence_rule, base_local).get_next(datetime)
+        # Normalize to UTC
+        return next_local.astimezone(timezone.utc)
     except Exception:
-        logger.warning("Failed to compute next occurrence for recurrence rule %r", recurrence_rule)
+        logger.warning(
+            "Failed to compute next occurrence for rule %r in tz %r", recurrence_rule, tz_name
+        )
         return None
 
 
@@ -106,7 +126,15 @@ async def _reschedule_recurring_tasks() -> int:
                     )
                     continue
 
-                next_run_at = _next_occurrence(task.run_at, task.recurrence_rule)
+                schedule_tz = "UTC"
+                if task.schedule_id:
+                    from app.models.schedule import Schedule
+                    async with SchedulerSessionLocal() as tz_db:
+                        parent_sched = await tz_db.get(Schedule, task.schedule_id)
+                        if parent_sched and parent_sched.timezone:
+                            schedule_tz = parent_sched.timezone
+
+                next_run_at = _next_occurrence(task.run_at, task.recurrence_rule, tz_name=schedule_tz)
                 if next_run_at is None:
                     logger.warning(
                         "Could not parse recurrence_rule for task %s: %r",
