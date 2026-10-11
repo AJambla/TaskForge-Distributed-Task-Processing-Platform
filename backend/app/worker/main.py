@@ -181,6 +181,20 @@ async def _mark_success(db, task: Task, attempt: TaskAttempt, worker_id=None, re
     await db.commit()
     await _update_worker_stats(db, worker_id, tasks_processed=1)
 
+    # Publish SSE event via Redis Pub/Sub (IMP-19)
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        event_payload = json.dumps({
+            "task_id": str(task.id),
+            "status": task.status,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "result": task.result,
+        })
+        await redis_client.publish(f"task:events:{task.id}", event_payload)
+    except Exception as exc:
+        logger.debug("Failed to publish SSE event for task %s: %s", task.id, exc)
+
 
 async def _mark_failure(
     db, task: Task, attempt: TaskAttempt, outcome: str, exc: Exception | None = None, worker_id=None
@@ -197,6 +211,19 @@ async def _mark_failure(
     await db.commit()
     if outcome == "failure":
         await _update_worker_stats(db, worker_id, tasks_failed=1)
+
+    # Publish SSE event via Redis Pub/Sub (IMP-19)
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        event_payload = json.dumps({
+            "task_id": str(task.id),
+            "status": task.status,
+            "error_message": attempt.error_message,
+        })
+        await redis_client.publish(f"task:events:{task.id}", event_payload)
+    except Exception as redis_exc:
+        logger.debug("Failed to publish SSE event for task %s: %s", task.id, redis_exc)
 
 
 async def _update_worker_stats(

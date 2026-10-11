@@ -9,6 +9,7 @@ Per API.md:
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Annotated
@@ -556,3 +557,84 @@ async def retry_task(
             },
         )
     return TaskResponse.model_validate(task)
+
+
+@router.get("/{task_id}/events", summary="Stream task state changes via SSE (IMP-19)")
+async def stream_task_events(
+    task_id: UUID,
+    current_user: CurrentUser,
+    db: DBSession,
+):
+    """Stream real-time task lifecycle updates using Server-Sent Events (SSE)."""
+    from fastapi.responses import StreamingResponse
+    from app.core.redis import get_redis
+
+    is_admin = current_user.role == "admin"
+    query = select(Task).where(Task.id == task_id)
+    if not is_admin:
+        query = query.where(Task.user_id == current_user.id)
+    result = await db.execute(query)
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "TASK_NOT_FOUND",
+                    "message": "Task not found or access denied.",
+                    "field": None,
+                }
+            },
+        )
+
+    async def event_generator():
+        # Yield initial current status immediately
+        initial_data = json.dumps({
+            "task_id": str(task.id),
+            "status": task.status,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "result": task.result,
+        })
+        yield f"data: {initial_data}\n\n"
+
+        # If already terminal, close stream
+        if task.status in ("succeeded", "failed", "dead_letter"):
+            return
+
+        redis_client = await get_redis()
+        pubsub = redis_client.pubsub()
+        channel_name = f"task:events:{task.id}"
+        await pubsub.subscribe(channel_name)
+
+        try:
+            while True:
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message and message.get("type") == "message":
+                    payload = message.get("data")
+                    yield f"data: {payload}\n\n"
+                    # Check if terminal status reached to gracefully close
+                    try:
+                        data_dict = json.loads(payload)
+                        if data_dict.get("status") in ("succeeded", "failed", "dead_letter"):
+                            break
+                    except Exception:
+                        pass
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await pubsub.unsubscribe(channel_name)
+            await pubsub.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
