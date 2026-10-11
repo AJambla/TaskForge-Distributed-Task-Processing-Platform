@@ -118,6 +118,7 @@ class PaginationInfo(BaseModel):
     page: int
     page_size: int
     total: int
+    next_cursor: str | None = None
 
 
 class TaskListResponse(BaseModel):

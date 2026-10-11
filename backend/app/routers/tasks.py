@@ -259,10 +259,36 @@ async def list_tasks(
     created_before: datetime | None = Query(None),  # noqa: B008
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    cursor: str | None = Query(None, description="Keyset pagination cursor token (IMP-18)."),
     sort: str = Query("-created_at", description="Sort field with optional '-' prefix."),
     all_tasks: bool = Query(False, description="Admin-only: include all users' tasks."),
 ) -> TaskListResponse:
     """List tasks with pagination, filtering, and sorting."""
+    import base64
+    import json
+
+    from fastapi.params import Query as QueryParam
+
+    # Normalize defaults when invoked directly as a Python callable in tests
+    if isinstance(status_filter, QueryParam):
+        status_filter = status_filter.default
+    if isinstance(task_type_filter, QueryParam):
+        task_type_filter = task_type_filter.default
+    if isinstance(created_after, QueryParam):
+        created_after = created_after.default
+    if isinstance(created_before, QueryParam):
+        created_before = created_before.default
+    if isinstance(page, QueryParam):
+        page = page.default
+    if isinstance(page_size, QueryParam):
+        page_size = page_size.default
+    if isinstance(cursor, QueryParam):
+        cursor = cursor.default
+    if isinstance(sort, QueryParam):
+        sort = sort.default
+    if isinstance(all_tasks, QueryParam):
+        all_tasks = all_tasks.default
+
     is_admin = current_user.role == "admin"
     if not is_admin and all_tasks:
         raise HTTPException(
@@ -280,7 +306,8 @@ async def list_tasks(
     if not is_admin or not all_tasks:
         base_query = base_query.where(Task.user_id == current_user.id)
     if status_filter:
-        base_query = base_query.where(Task.status == status_filter.value)
+        val = status_filter.value if hasattr(status_filter, "value") else str(status_filter)
+        base_query = base_query.where(Task.status == val)
     if task_type_filter:
         base_query = base_query.where(Task.task_type == task_type_filter)
     if created_after:
@@ -292,6 +319,20 @@ async def list_tasks(
     count_query = select(func.count()).select_from(base_query.subquery())
     total_result = await db.execute(count_query)
     total = total_result.scalar_one()
+
+    # Cursor-based keyset filter (IMP-18)
+    if cursor:
+        try:
+            decoded = json.loads(base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8"))
+            cursor_dt = datetime.fromisoformat(decoded["created_at"])
+            cursor_id = UUID(decoded["id"])
+            # Default sort is -created_at: where created_at < cursor_dt or (created_at == cursor_dt and id < cursor_id)
+            base_query = base_query.where(
+                (Task.created_at < cursor_dt) |
+                ((Task.created_at == cursor_dt) & (Task.id < cursor_id))
+            )
+        except Exception as exc:
+            logger.warning("Invalid pagination cursor: %s", exc)
 
     # Sorting
     sort_field = sort.lstrip("-")
@@ -306,20 +347,32 @@ async def list_tasks(
     }
     order_col = column_map.get(sort_field, Task.created_at)
     if not sort_ascending:
-        base_query = base_query.order_by(order_col.desc())
+        base_query = base_query.order_by(order_col.desc(), Task.id.desc())
     else:
-        base_query = base_query.order_by(order_col.asc())
+        base_query = base_query.order_by(order_col.asc(), Task.id.asc())
 
-    # Pagination
-    offset = (page - 1) * page_size
-    base_query = base_query.offset(offset).limit(page_size)
+    # Pagination: if cursor is provided, skip offset for O(1) performance
+    if not cursor:
+        offset = (page - 1) * page_size
+        base_query = base_query.offset(offset)
+    base_query = base_query.limit(page_size)
 
     result = await db.execute(base_query)
     tasks = result.scalars().all()
 
+    # Compute next_cursor
+    next_cursor = None
+    if len(tasks) == page_size:
+        last_task = tasks[-1]
+        raw_cursor = json.dumps({
+            "created_at": last_task.created_at.isoformat() if last_task.created_at else now.isoformat(),
+            "id": str(last_task.id),
+        })
+        next_cursor = base64.urlsafe_b64encode(raw_cursor.encode("utf-8")).decode("utf-8")
+
     return TaskListResponse(
         data=[TaskResponse.model_validate(t) for t in tasks],
-        pagination=PaginationInfo(page=page, page_size=page_size, total=total),
+        pagination=PaginationInfo(page=page, page_size=page_size, total=total, next_cursor=next_cursor),
     )
 
 
