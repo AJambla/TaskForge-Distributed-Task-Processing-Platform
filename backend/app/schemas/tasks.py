@@ -124,3 +124,15 @@ class TaskListResponse(BaseModel):
     data: list[TaskResponse]
     pagination: PaginationInfo
 
+
+class TaskBulkCreateRequest(BaseModel):
+    tasks: list[TaskCreateRequest] = Field(
+        ..., min_length=1, max_length=1000, description="List of tasks to create (max 1000)."
+    )
+
+
+class TaskBulkResponse(BaseModel):
+    submitted_count: int
+    tasks: list[TaskResponse]
+
+

@@ -26,6 +26,8 @@ from app.core.redis import check_idempotency, set_idempotency_task_id
 from app.models.task import Task
 from app.schemas.tasks import (
     PaginationInfo,
+    TaskBulkCreateRequest,
+    TaskBulkResponse,
     TaskCreateRequest,
     TaskListResponse,
     TaskResponse,
@@ -176,6 +178,75 @@ async def create_task(
         )
 
     return TaskResponse.model_validate(task)
+
+
+@router.post(
+    "/bulk",
+    response_model=TaskBulkResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit multiple tasks in a single batch (IMP-17)",
+)
+async def create_tasks_bulk(
+    body: TaskBulkCreateRequest,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> TaskBulkResponse:
+    """Submit a batch of up to 1,000 tasks atomically."""
+    await check_backpressure()
+
+    now = datetime.now(timezone.utc)
+    from app.models.task_outbox import TaskOutbox
+
+    created_tasks: list[Task] = []
+    outbox_entries: list[TaskOutbox] = []
+
+    for req in body.tasks:
+        run_at = req.run_at or now
+        task = Task(
+            user_id=current_user.id,
+            task_type=req.task_type.value,
+            payload=req.payload,
+            priority=req.priority,
+            idempotency_key=req.idempotency_key,
+            max_attempts=req.max_attempts,
+            run_at=run_at,
+            recurrence_rule=req.recurrence_rule,
+        )
+        db.add(task)
+        created_tasks.append(task)
+
+    await db.flush()
+
+    for task in created_tasks:
+        should_publish = not (task.recurrence_rule and task.run_at > now)
+        if should_publish:
+            outbox_entry = TaskOutbox(
+                task_id=task.id,
+                task_type=task.task_type,
+                payload=task.payload,
+                priority=task.priority,
+                status="pending",
+            )
+            db.add(outbox_entry)
+            outbox_entries.append(outbox_entry)
+
+    await db.commit()
+
+    # Best-effort immediate publication
+    for task, outbox_entry in zip(created_tasks, outbox_entries):
+        try:
+            await publish_task(str(task.id), task.task_type, priority=task.priority)
+            outbox_entry.status = "published"
+            outbox_entry.processed_at = datetime.now(timezone.utc)
+        except Exception:
+            logger.warning("Bulk immediate publish failed for task %s; outbox relay will drain.", task.id)
+
+    await db.commit()
+
+    return TaskBulkResponse(
+        submitted_count=len(created_tasks),
+        tasks=[TaskResponse.model_validate(t) for t in created_tasks],
+    )
 
 
 @router.get("", response_model=TaskListResponse, summary="List tasks")
