@@ -6,7 +6,6 @@ import {
   CircleDollarSign,
   Clock,
   FileText,
-  KeyRound,
   ListChecks,
   Mail,
   Plus,
@@ -289,13 +288,6 @@ export default function Overview() {
                 <span>
                   <strong>Submit task</strong>
                   <em>Queue an email, resize or webhook</em>
-                </span>
-              </Link>
-              <Link to="/app/api-keys" className="ov-quick__item">
-                <KeyRound size={16} />
-                <span>
-                  <strong>Create API key</strong>
-                  <em>Authenticate your services</em>
                 </span>
               </Link>
               {isAdmin ? (
