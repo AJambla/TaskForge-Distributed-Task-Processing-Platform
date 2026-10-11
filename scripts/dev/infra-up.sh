@@ -8,7 +8,7 @@ docker compose up -d
 echo
 echo "Postgres   -> localhost:5433   (native Postgres 18 holds :5432)"
 echo "Redis      -> localhost:6379"
-echo "RabbitMQ   -> localhost:5672  | mgmt UI http://localhost:15672 (taskforge/taskforge_dev_secret)"
+echo "RabbitMQ   -> localhost:5672  | mgmt UI http://localhost:15672 (credentials from .env)"
 echo "Prometheus -> http://localhost:9090"
-echo "Grafana    -> http://localhost:3000 (admin/admin)"
+echo "Grafana    -> http://localhost:3000 (credentials from .env)"
 echo "Mailpit    -> SMTP localhost:1025   | web http://localhost:8025"

@@ -2,16 +2,18 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-taskforge}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskforge_dev_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-taskforge}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-taskforge} -d ${POSTGRES_DB:-taskforge}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -32,10 +34,12 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-taskforge}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-taskforge_dev_secret}
-      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST}
       RABBITMQ_PLUGINS: rabbitmq_prometheus
     ports:
       - "5672:5672"
@@ -59,9 +63,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,9 +87,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
     depends_on:
       postgres:
@@ -105,9 +109,9 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-taskforge}:${RABBITMQ_PASS:-taskforge_dev_secret}@rabbitmq:5672/${RABBITMQ_VHOST:-taskforge}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672/${RABBITMQ_VHOST}
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,8 +123,10 @@ services:
   postgres_exporter:
     image: prometheuscommunity/postgres-exporter:latest
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_secret}@postgres:5432/${POSTGRES_DB:-taskforge}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
     ports:
       - "9187:9187"
     depends_on:
@@ -147,9 +153,11 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
