@@ -91,6 +91,13 @@ async def mark_success(
     except Exception as exc:
         logger.debug("Failed to publish SSE event for task %s: %s", task.id, exc)
 
+    # Advance DAG workflow downstream steps (FEAT-04)
+    try:
+        from app.core.workflow_engine import resolve_and_dispatch_downstream
+        await resolve_and_dispatch_downstream(db, task.id)
+    except Exception as wf_exc:
+        logger.debug("Workflow resolution skipped or error for task %s: %s", task.id, wf_exc)
+
 
 async def mark_failure(
     db: AsyncSession,
@@ -126,6 +133,14 @@ async def mark_failure(
         await redis_client.publish(f"task:events:{task.id}", event_payload)
     except Exception as redis_exc:
         logger.debug("Failed to publish SSE event for task %s: %s", task.id, redis_exc)
+
+    # If terminal failure, handle workflow step failure (FEAT-04)
+    if task.status in ("failed", "dead_letter"):
+        try:
+            from app.core.workflow_engine import handle_step_failure
+            await handle_step_failure(db, task.id)
+        except Exception as wf_err:
+            logger.debug("Workflow failure handling skipped for task %s: %s", task.id, wf_err)
 
 
 async def register_worker(db: AsyncSession) -> WorkerRegistration:
