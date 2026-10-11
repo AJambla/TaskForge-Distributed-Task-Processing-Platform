@@ -1,15 +1,22 @@
-"""Unit test for image resize handler."""
+"""Unit test for image resize external plugin (FEAT-06)."""
 import base64
 import io
-from pathlib import Path
 import pytest
+from unittest.mock import AsyncMock, MagicMock
 from PIL import Image
 
-from app.worker.handlers.image import handle_image_resize
+from image_plugin.handler import handle_image_resize, ImageResizePayload
+from app.worker.context import TaskContext
+from app.worker.handlers import get_handler, list_handlers
 
 
 @pytest.mark.asyncio
-async def test_image_resize_persists_file(tmp_path):
+async def test_image_resize_plugin_handler():
+    # Verify handler is registered in the TaskForge SPI
+    handlers = list_handlers()
+    assert "image_resize" in handlers
+    assert callable(get_handler("image_resize"))
+
     # Create a 200x200 sample image in base64
     buf = io.BytesIO()
     img = Image.new("RGB", (200, 200), color="blue")
@@ -17,14 +24,27 @@ async def test_image_resize_persists_file(tmp_path):
     raw_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     data_uri = f"data:image/png;base64,{raw_b64}"
 
-    out_file = tmp_path / "resized.png"
     payload = {
         "data": data_uri,
-        "output_path": str(out_file),
+        "width": 100,
+        "height": 100,
     }
 
-    result = await handle_image_resize(payload)
+    # Validate schema
+    parsed_payload = ImageResizePayload(**payload)
+    assert parsed_payload.width == 100
+
+    # Instantiate TaskContext
+    ctx = TaskContext(
+        task_id="task-test-image-plugin",
+        task_type="image_resize",
+        attempt=1,
+    )
+    ctx.set_progress = AsyncMock()
+
+    result = await handle_image_resize(payload, ctx)
     assert result["format"] == "JPEG"
-    assert result["output_path"] == str(out_file)
-    assert out_file.exists()
-    assert out_file.stat().st_size > 0
+    assert "artifacts" in result
+    assert len(result["artifacts"]) == 1
+    assert result["artifacts"][0]["content_type"] == "image/jpeg"
+    assert ctx.set_progress.called

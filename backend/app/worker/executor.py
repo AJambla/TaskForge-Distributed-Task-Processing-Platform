@@ -13,7 +13,6 @@ _SETTINGS = get_settings()
 
 _TIMEOUT_MAP: dict[str, str] = {
     "email_send": "task_email_timeout_seconds",
-    "image_resize": "task_image_resize_timeout_seconds",
     "webhook_delivery": "task_webhook_timeout_seconds",
 }
 

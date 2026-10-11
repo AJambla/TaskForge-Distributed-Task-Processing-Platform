@@ -20,13 +20,11 @@ import { durationBetween, relativeTime, shortId } from "../../lib/format";
 
 const taskTypeLabels: Record<string, string> = {
   email_send: "Email Send",
-  image_resize: "Image Resize",
   webhook_delivery: "Webhook Delivery",
 };
 
 const TYPE_ICONS: Record<string, React.ReactNode> = {
   email_send: <Mail size={14} />,
-  image_resize: <ImageIcon size={14} />,
   webhook_delivery: <Webhook size={14} />,
 };
 
@@ -120,9 +118,7 @@ export default function Tasks() {
       payload:
         type === "email_send"
           ? { to: "", subject: "", body: "" }
-          : type === "image_resize"
-            ? { source_url: "", width: 800, height: 600 }
-            : { url: "", headers: {}, body: {} },
+          : { url: "", headers: {}, body: {} },
     });
   };
 
@@ -328,7 +324,6 @@ export default function Tasks() {
                 className="field__input"
               >
                 <option value="email_send">Email Send</option>
-                <option value="image_resize">Image Resize</option>
                 <option value="webhook_delivery">Webhook Delivery</option>
               </select>
             </Field>
@@ -365,43 +360,6 @@ export default function Tasks() {
                     required
                   />
                 </Field>
-              </>
-            )}
-
-            {formData.task_type === "image_resize" && (
-              <>
-                <Field label="Image URL">
-                  <input
-                    type="url"
-                    value={(formData.payload.source_url as string) || ""}
-                    onChange={(e) => setPayloadField("source_url", e.target.value)}
-                    className="field__input"
-                    placeholder="https://example.com/image.jpg"
-                    required
-                  />
-                </Field>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Width">
-                    <input
-                      type="number"
-                      value={(formData.payload.width as number) || 800}
-                      onChange={(e) => setPayloadField("width", Number(e.target.value))}
-                      className="field__input"
-                      min={1}
-                      required
-                    />
-                  </Field>
-                  <Field label="Height">
-                    <input
-                      type="number"
-                      value={(formData.payload.height as number) || 600}
-                      onChange={(e) => setPayloadField("height", Number(e.target.value))}
-                      className="field__input"
-                      min={1}
-                      required
-                    />
-                  </Field>
-                </div>
               </>
             )}
 

@@ -71,6 +71,13 @@ def test_custom_task_schema_validation_success_and_failure():
 def test_list_handlers_contains_registered_metadata():
     handlers = list_handlers()
     assert "email_send" in handlers
-    assert "image_resize" in handlers
     assert "webhook_delivery" in handlers
     assert handlers["email_send"]["timeout_seconds"] == 30
+
+
+def test_unknown_task_type_rejected():
+    with pytest.raises(ValueError, match="Unknown task_type: 'non_existent_random_type'"):
+        TaskCreateRequest(
+            task_type="non_existent_random_type",
+            payload={"some": "data"},
+        )

@@ -12,7 +12,7 @@ from app.worker.retry import RETRY_BUCKETS
 logger = logging.getLogger("worker.consumer")
 
 EXCHANGE_NAME = "task_main_exchange"
-TASK_TYPES = ["email_send", "image_resize", "webhook_delivery"]
+TASK_TYPES = ["email_send", "webhook_delivery"]
 _inflight_tasks: set[asyncio.Task] = set()
 
 

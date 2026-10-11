@@ -49,7 +49,7 @@ export interface TaskAttempt {
 }
 
 export interface TaskCreateRequest {
-  task_type: "email_send" | "image_resize" | "webhook_delivery";
+  task_type: "email_send" | "webhook_delivery" | string;
   payload: Record<string, unknown>;
   idempotency_key?: string;
   priority?: number;

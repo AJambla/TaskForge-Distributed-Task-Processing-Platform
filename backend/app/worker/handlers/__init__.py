@@ -132,11 +132,9 @@ def discover_entrypoint_handlers(group: str = "taskforge.handlers") -> int:
 
 # Register built-in handlers
 from app.worker.handlers.email import handle_email_send
-from app.worker.handlers.image import handle_image_resize
 from app.worker.handlers.webhook import handle_webhook_delivery
 
 register_handler("email_send", timeout_seconds=30, description="Send outbound email")(handle_email_send)
-register_handler("image_resize", timeout_seconds=60, description="Resize and optimize image")(handle_image_resize)
 register_handler("webhook_delivery", timeout_seconds=30, description="Deliver webhook payload with HMAC")(handle_webhook_delivery)
 
 # Scan entry points

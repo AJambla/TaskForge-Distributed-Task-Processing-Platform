@@ -65,17 +65,11 @@ class Settings(BaseSettings):
     # Task Settings
     task_max_attempts_default: int = 5
     task_email_timeout_seconds: int = 30
-    task_image_resize_timeout_seconds: int = 60
     task_webhook_timeout_seconds: int = 30
 
     # Rate Limiting
     rate_limit_task_submission_per_minute: int = 60
     rate_limit_auth_per_minute: int = 20
-
-    # Image Resize Handler
-    image_max_dimension_px: int = 4096
-    image_max_response_size_mb: int = 50
-    image_output_dir: str = "data/images"
 
     # Webhook Handler
     webhook_max_response_size_kb: int = 1024

@@ -62,7 +62,7 @@ async def test_subscribe_queues_declares_bucketed_queues():
 
     await subscribe_queues(mock_publisher)
 
-    for task_type in ["email_send", "image_resize", "webhook_delivery"]:
+    for task_type in ["email_send", "webhook_delivery"]:
         for bucket in RETRY_BUCKETS:
             q_name = f"tasks.{task_type}.retry.{bucket}s"
             assert q_name in declared_queues

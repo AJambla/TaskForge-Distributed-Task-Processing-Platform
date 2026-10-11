@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, field_validator
 
 class TaskType(str, Enum):
     EMAIL_SEND = "email_send"
-    IMAGE_RESIZE = "image_resize"
     WEBHOOK_DELIVERY = "webhook_delivery"
 
 
@@ -21,12 +20,6 @@ class TaskStatus(str, Enum):
     RETRYING = "retrying"
     DEAD_LETTER = "dead_letter"
     CANCELLED = "cancelled"
-
-
-class ImageResizePayload(BaseModel):
-    source_url: str = Field(..., description="URL of the source image.")
-    width: int = Field(..., gt=0, description="Target width in pixels.")
-    height: int = Field(..., gt=0, description="Target height in pixels.")
 
 
 class EmailSendPayload(BaseModel):
@@ -43,7 +36,6 @@ class WebhookDeliveryPayload(BaseModel):
 
 PayloadMap = {
     TaskType.EMAIL_SEND: EmailSendPayload,
-    TaskType.IMAGE_RESIZE: ImageResizePayload,
     TaskType.WEBHOOK_DELIVERY: WebhookDeliveryPayload,
 }
 
@@ -69,6 +61,18 @@ class TaskCreateRequest(BaseModel):
         max_length=100,
         description="Optional cron expression (e.g. '0 * * * *') for recurring tasks.",
     )
+
+    @field_validator("task_type")
+    @classmethod
+    def validate_task_type(cls, v: TaskType | str) -> str:
+        type_str = v.value if hasattr(v, "value") else str(v)
+        from app.worker.handlers import list_handlers
+        registered_handlers = list_handlers()
+        if type_str not in registered_handlers and type_str not in [t.value for t in TaskType]:
+            raise ValueError(
+                f"Unknown task_type: '{type_str}'. Task type must be registered with the handler registry."
+            )
+        return type_str
 
     @field_validator("recurrence_rule")
     @classmethod

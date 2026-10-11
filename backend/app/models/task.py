@@ -69,10 +69,6 @@ class Task(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "task_type IN ('email_send', 'image_resize', 'webhook_delivery')",
-            name="ck_tasks_task_type",
-        ),
-        CheckConstraint(
             "status IN ('queued', 'running', 'succeeded', 'failed', 'retrying', 'dead_letter', 'cancelled')",
             name="ck_tasks_status",
         ),

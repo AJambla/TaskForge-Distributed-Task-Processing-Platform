@@ -48,10 +48,6 @@ class Schedule(Base):
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "task_type IN ('email_send', 'image_resize', 'webhook_delivery')",
-            name="ck_schedules_task_type",
-        ),
         Index("ix_schedules_next_run", "is_paused", "next_run_at"),
     )
 

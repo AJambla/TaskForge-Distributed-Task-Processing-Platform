@@ -15,11 +15,9 @@ from app.worker.handlers import (
 def test_builtin_handlers_registered():
     handlers = list_handlers()
     assert "email_send" in handlers
-    assert "image_resize" in handlers
     assert "webhook_delivery" in handlers
 
     assert callable(get_handler("email_send"))
-    assert callable(get_handler("image_resize"))
     assert callable(get_handler("webhook_delivery"))
 
 

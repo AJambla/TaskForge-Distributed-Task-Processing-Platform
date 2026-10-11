@@ -202,7 +202,7 @@ async def create_task(
         try:
             await publish_task(
                 str(task.id),
-                body.task_type.value,
+                task_type_str,
                 priority=body.priority,
                 traceparent=traceparent,
             )
