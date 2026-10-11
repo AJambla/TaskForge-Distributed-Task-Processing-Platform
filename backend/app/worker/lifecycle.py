@@ -70,6 +70,21 @@ async def mark_success(
     if isinstance(result, dict):
         task.result = result
         attempt.result = result
+        # Persist produced artifacts (FEAT-01)
+        raw_artifacts = result.get("artifacts")
+        if isinstance(raw_artifacts, list):
+            from app.models.artifact import Artifact
+            for art in raw_artifacts:
+                if isinstance(art, dict) and "storage_key" in art and "filename" in art:
+                    db.add(
+                        Artifact(
+                            task_id=task.id,
+                            storage_key=art["storage_key"],
+                            filename=art["filename"],
+                            content_type=art.get("content_type", "application/octet-stream"),
+                            size_bytes=int(art.get("size_bytes", 0)),
+                        )
+                    )
     attempt.outcome = "success"
     attempt.finished_at = datetime.now(timezone.utc)
     attempt.error_message = None

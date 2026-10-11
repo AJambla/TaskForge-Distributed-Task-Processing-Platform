@@ -88,23 +88,38 @@ async def handle_image_resize(payload: dict[str, Any]) -> dict[str, Any]:
             f"Resized image exceeds {settings.image_max_response_size_mb}MB limit"
         )
 
+    # Storage Backend Integration (FEAT-01)
+    from app.core.storage import get_storage_backend
+    storage = get_storage_backend()
+
+    ext = fmt.lower()
+    filename = f"resized_{uuid.uuid4().hex[:8]}.{ext}"
+    content_type = f"image/{ext}" if ext != "jpg" else "image/jpeg"
+    storage_key = f"tasks/artifacts/{filename}"
+
+    storage.save(storage_key, resized_bytes, content_type=content_type)
+
     output_path = payload.get("output_path")
-    if not output_path:
-        out_dir = Path(settings.image_output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{uuid.uuid4().hex}.{fmt.lower()}"
-        target_file = out_dir / filename
-    else:
+    if output_path:
         target_file = Path(output_path)
         target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_bytes(resized_bytes)
+        output_path_str = str(target_file)
+    else:
+        output_path_str = storage_key
 
-    target_file.write_bytes(resized_bytes)
-    output_path_str = str(target_file)
-
-    logger.info("Image resized and stored at %s: %s (%d bytes)", output_path_str, fmt, len(resized_bytes))
+    logger.info("Image resized and stored via storage backend key: %s (%d bytes)", storage_key, len(resized_bytes))
     return {
         "format": fmt,
         "size_bytes": len(resized_bytes),
         "size_mb": round(result_size_mb, 3),
         "output_path": output_path_str,
+        "artifacts": [
+            {
+                "storage_key": storage_key,
+                "filename": filename,
+                "content_type": content_type,
+                "size_bytes": len(resized_bytes),
+            }
+        ],
     }
