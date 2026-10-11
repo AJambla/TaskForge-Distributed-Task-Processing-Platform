@@ -69,12 +69,13 @@ class RabbitMQPublisher:
         self._channel = None
         self._exchange = None
 
-    async def publish(self, task_id: str, task_type: str) -> None:
+    async def publish(self, task_id: str, task_type: str, priority: int = 0) -> None:
         """Publish a task message to the main exchange.
 
         Args:
             task_id: UUID string of the task to process.
             task_type: routing key (e.g. 'email_send').
+            priority: integer priority (clamped to 0-10 for AMQP priority queues).
         """
         if self._connection is None or self._connection.is_closed:
             await self.connect()
@@ -90,11 +91,13 @@ class RabbitMQPublisher:
                 durable=True,
             )
 
+        clamped_priority = max(0, min(10, int(priority)))
         body = task_id.encode("utf-8")
         message = Message(
             body,
             content_type="text/plain",
             delivery_mode=DeliveryMode.PERSISTENT,
+            priority=clamped_priority,
             headers={
                 "x-task-type": task_type,
                 "x-task-id": task_id,
@@ -102,10 +105,11 @@ class RabbitMQPublisher:
         )
         await self._exchange.publish(message, routing_key=task_type)
         logger.info(
-            "Published task %s to exchange '%s' with routing key '%s'.",
+            "Published task %s to exchange '%s' with routing key '%s' (priority=%d).",
             task_id,
             EXCHANGE_NAME,
             task_type,
+            clamped_priority,
         )
 
 
@@ -129,10 +133,10 @@ async def close_publisher() -> None:
         _publisher = None
 
 
-async def publish_task(task_id: str, task_type: str) -> None:
+async def publish_task(task_id: str, task_type: str, priority: int = 0) -> None:
     """Convenience function to publish a task message."""
     publisher = await get_publisher()
-    await publisher.publish(task_id, task_type)
+    await publisher.publish(task_id, task_type, priority=priority)
 
 
 async def get_queue_depths() -> dict[str, int]:

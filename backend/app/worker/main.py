@@ -501,6 +501,7 @@ async def subscribe_queues(publisher, worker_id=None, shutdown_event=None) -> li
             arguments={
                 "x-dead-letter-exchange": EXCHANGE_NAME,
                 "x-dead-letter-routing-key": f"tasks.{task_type}.dlq",
+                "x-max-priority": 10,
             },
         )
         await queue.bind(exchange, routing_key=task_type)

@@ -123,7 +123,7 @@ async def create_task(
     should_publish = not (body.recurrence_rule and run_at > now)
     if should_publish:
         try:
-            await publish_task(str(task.id), body.task_type.value)
+            await publish_task(str(task.id), body.task_type.value, priority=body.priority)
         except Exception:
             logger.exception("Failed to publish task %s to RabbitMQ", task.id)
             task.status = TaskStatus.FAILED.value
@@ -382,7 +382,7 @@ async def retry_task(
 
     # Re-publish to RabbitMQ
     try:
-        await publish_task(str(task.id), task.task_type)
+        await publish_task(str(task.id), task.task_type, priority=task.priority)
     except Exception:
         logger.exception("Failed to re-publish retried task %s", task.id)
         # Roll the row back to its retryable state — leaving it 'queued'
