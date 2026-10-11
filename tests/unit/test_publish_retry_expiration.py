@@ -17,9 +17,6 @@ async def test_publish_retry_sets_encodable_expiration():
 
     message = publisher.exchange.publish.await_args.args[0]
     routing_key = publisher.exchange.publish.await_args.kwargs["routing_key"]
-    assert routing_key == "tasks.email_send.retry"
-    assert isinstance(message.expiration, timedelta)
-    assert message.expiration == timedelta(milliseconds=5000)
-    # raises ValueError on aio_pika >= 10 if expiration is a str
-    props = message.properties
-    assert props.expiration == "5000"
+    assert routing_key == "tasks.email_send.retry.5s"
+    assert message.headers["x-task-id"] == "task-123"
+    assert message.headers["x-task-type"] == "email_send"

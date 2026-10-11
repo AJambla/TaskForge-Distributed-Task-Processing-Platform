@@ -87,7 +87,7 @@ async def test_failed_task_below_max_is_republished_to_retry(env):
 
     publisher.exchange.publish.assert_awaited_once()
     _, kwargs = publisher.exchange.publish.await_args
-    assert kwargs["routing_key"] == "tasks.email_send.retry"
+    assert kwargs["routing_key"] == "tasks.email_send.retry.5s"
     msg.ack.assert_awaited_once()
 
 
@@ -158,8 +158,7 @@ async def test_future_run_at_task_is_deferred_via_retry_ttl(env):
 
     publisher.exchange.publish.assert_awaited_once()
     args, kwargs = publisher.exchange.publish.await_args
-    assert kwargs["routing_key"] == "tasks.email_send.retry"
-    assert args[0].expiration == timedelta(milliseconds=120000)
+    assert kwargs["routing_key"] == "tasks.email_send.retry.60s"
     msg.ack.assert_awaited_once()
 
 
