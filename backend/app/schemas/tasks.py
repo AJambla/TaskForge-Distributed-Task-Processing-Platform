@@ -49,7 +49,7 @@ PayloadMap = {
 
 
 class TaskCreateRequest(BaseModel):
-    task_type: TaskType
+    task_type: TaskType | str
     payload: dict[str, Any] = Field(..., description="Task-specific JSON payload.")
     idempotency_key: str | None = Field(
         None,
@@ -85,13 +85,31 @@ class TaskCreateRequest(BaseModel):
     @field_validator("payload")
     @classmethod
     def validate_payload(cls, v: dict[str, Any], info) -> dict[str, Any]:
-        task_type = info.data.get("task_type")
-        if task_type and task_type in PayloadMap:
-            schema = PayloadMap[task_type]
+        raw_type = info.data.get("task_type")
+        if not raw_type:
+            return v
+        type_str = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
+
+        schema = None
+        # Check built-in PayloadMap
+        if raw_type in PayloadMap:
+            schema = PayloadMap[raw_type]
+        else:
+            for k, val in PayloadMap.items():
+                if k.value == type_str:
+                    schema = val
+                    break
+
+        # Check pluggable handler schema registry (FEAT-06)
+        if schema is None:
+            from app.worker.handlers import get_handler_schema
+            schema = get_handler_schema(type_str)
+
+        if schema is not None:
             try:
                 schema.model_validate(v)
             except Exception as exc:
-                raise ValueError(f"Invalid payload for {task_type.value}: {exc}") from exc
+                raise ValueError(f"Invalid payload for {type_str}: {exc}") from exc
         return v
 
 

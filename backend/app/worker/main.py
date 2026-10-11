@@ -40,8 +40,9 @@ from app.worker.consumer import (
     _inflight_tasks,
     subscribe_queues as _consumer_subscribe_queues,
 )
+from app.worker.context import TaskContext
 from app.worker.executor import get_timeout as _get_timeout, run_handler_in_sandbox as _run_handler_in_sandbox
-from app.worker.handlers import get_handler
+from app.worker.handlers import get_handler, get_handler_metadata
 from app.worker.lifecycle import (
     _HEARTBEAT_INTERVAL_SECONDS,
     _WORKER_HOSTNAME,
@@ -169,23 +170,45 @@ async def consume_task(
                 span.set_attribute("queue_latency_ms", float(queue_latency_ms))
 
             try:
+                # Pluggable Handler Context support (FEAT-06)
+                ctx = TaskContext(
+                    task_id=task_id,
+                    task_type=task_type,
+                    attempt=attempt.attempt_number,
+                    worker_id=worker_id,
+                    trace_id=resolved_trace_id,
+                )
+                meta = get_handler_metadata(task_type)
+                pass_ctx = meta.get("has_context", False) if meta else False
+
                 start = asyncio.get_event_loop().time()
                 if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
                     result = await asyncio.wait_for(
                         asyncio.get_event_loop().run_in_executor(
-                            None, _run_handler_in_sandbox, handler, task.payload
+                            None, _run_handler_in_sandbox, handler, task.payload, ctx if pass_ctx else None
                         ),
                         timeout=timeout,
                     )
                 else:
-                    result = await asyncio.wait_for(
-                        handler(task.payload), timeout=timeout
-                    )
+                    handler_coro = handler(task.payload, ctx) if pass_ctx else handler(task.payload)
+                    result = await asyncio.wait_for(handler_coro, timeout=timeout)
                 elapsed = asyncio.get_event_loop().time() - start
                 span.set_attribute("execution_latency_ms", float(elapsed * 1000.0))
                 span.set_attribute("task.status", "succeeded")
                 span.set_status(Status(StatusCode.OK))
                 task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+
+                # Merge any artifacts uploaded via ctx into result if result is a dict
+                if ctx.uploaded_artifacts:
+                    if isinstance(result, dict):
+                        existing_artifacts = result.get("artifacts") or []
+                        if isinstance(existing_artifacts, list):
+                            result["artifacts"] = existing_artifacts + ctx.uploaded_artifacts
+                        else:
+                            result["artifacts"] = ctx.uploaded_artifacts
+                    elif result is None:
+                        result = {"artifacts": ctx.uploaded_artifacts}
+
                 await _mark_success(db, task, attempt, worker_id=worker_id, result=result)
                 tasks_processed_total.labels(
                     outcome="success", task_type=task_type
