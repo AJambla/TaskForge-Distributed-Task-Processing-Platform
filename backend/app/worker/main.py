@@ -1,8 +1,10 @@
 """TaskForge worker — consumes tasks from RabbitMQ and processes them.
 
-Phase 3: real handlers, TaskAttempt lifecycle tracking, exponential backoff
-retries, and dead-letter queue routing.
-Phase 4: worker registration, heartbeat loop, and graceful shutdown.
+Modular architecture (IMP-21):
+- `consumer.py`: AMQP queue declaration, consumer subscriptions, message lifecycle.
+- `executor.py`: Handler execution, sandbox processes, timeout enforcement.
+- `lifecycle.py`: Worker DB registration, heartbeats, and status transitions.
+- `retry.py`: Exponential backoff math and bucketed queue delay routing.
 """
 from __future__ import annotations
 
@@ -12,16 +14,16 @@ import os
 import signal
 import socket
 import sys
-import traceback
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import aio_pika
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
@@ -32,13 +34,36 @@ from app.database import AsyncSessionLocal, engine
 from app.models.task import Task
 from app.models.task_attempt import TaskAttempt
 from app.models.worker_registration import WorkerRegistration
+from app.worker.consumer import (
+    EXCHANGE_NAME,
+    TASK_TYPES,
+    _inflight_tasks,
+    subscribe_queues as _consumer_subscribe_queues,
+)
+from app.worker.executor import get_timeout as _get_timeout, run_handler_in_sandbox as _run_handler_in_sandbox
 from app.worker.handlers import get_handler
+from app.worker.lifecycle import (
+    _HEARTBEAT_INTERVAL_SECONDS,
+    _WORKER_HOSTNAME,
+    create_attempt,
+    mark_failure as _mark_failure,
+    mark_success as _mark_success,
+    register_worker as _register_worker,
+    set_worker_offline as _set_worker_offline,
+    update_heartbeat as _update_heartbeat,
+    update_worker_stats as _update_worker_stats,
+)
 from app.worker.metrics import (
     start_metrics_server,
     task_attempts_total,
     task_duration_seconds,
     tasks_processed_total,
     workers_online_total,
+)
+from app.worker.retry import (
+    RETRY_BUCKETS,
+    calculate_retry_delay as _calculate_retry_delay,
+    publish_retry as _publish_retry,
 )
 
 _SETTINGS = get_settings()
@@ -50,248 +75,8 @@ configure_logging(
 )
 logger = logging.getLogger("worker")
 
-EXCHANGE_NAME = "task_main_exchange"
-TASK_TYPES = ["email_send", "image_resize", "webhook_delivery"]
-
-RETRY_BUCKETS: tuple[int, ...] = (5, 10, 20, 40, 60)
-_RETRY_BASE_DELAY_SECONDS = 5
-_RETRY_MAX_DELAY_SECONDS = 60
-
-_TIMEOUT_MAP: dict[str, str] = {
-    "email_send": "task_email_timeout_seconds",
-    "image_resize": "task_image_resize_timeout_seconds",
-    "webhook_delivery": "task_webhook_timeout_seconds",
-}
-
-_HEARTBEAT_INTERVAL_SECONDS = 15
-_WORKER_HOSTNAME: str = os.environ.get("WORKER_HOSTNAME", socket.gethostname())
-
-# Number of handlers executing right now in this process. Reported with
-# each heartbeat so the dashboard shows real per-worker load.
 _active_task_count = 0
-
-
-def _get_timeout(task_type: str) -> int:
-    setting_name = _TIMEOUT_MAP.get(task_type, "task_webhook_timeout_seconds")
-    return getattr(_SETTINGS, setting_name)
-
-
-def _run_handler_in_sandbox(handler, payload) -> object:
-    """Run a handler in a child process with resource limits (POSIX only).
-
-    On Windows, resource.setrlimit is unavailable — runs the handler directly
-    and relies on the asyncio timeout wrapper instead.
-    """
-    import inspect
-
-    if sys.platform == "win32" or not _SETTINGS.sandbox_enabled:
-        if inspect.iscoroutinefunction(handler):
-            return asyncio.run(handler(payload))
-        res = handler(payload)
-        if inspect.isawaitable(res):
-            return asyncio.run(res)
-        return res
-
-    import multiprocessing
-
-    def _worker(handler_fn, payload_data, result_queue):
-        import resource
-
-        limit_bytes = _SETTINGS.sandbox_memory_limit_mb * 1024 * 1024
-        try:
-            resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
-        except (OSError, resource.error):
-            logger.warning(
-                "Failed to set memory limit — continuing without RSS cap."
-            )
-        try:
-            resource.setrlimit(
-                resource.RLIMIT_CPU,
-                (int(_SETTINGS.sandbox_cpu_limit_seconds), int(_SETTINGS.sandbox_cpu_limit_seconds)),
-            )
-        except (OSError, resource.error):
-            logger.warning(
-                "Failed to set CPU limit — continuing without CPU cap."
-            )
-        try:
-            if inspect.iscoroutinefunction(handler_fn):
-                result = asyncio.run(handler_fn(payload_data))
-            else:
-                result = handler_fn(payload_data)
-                if inspect.isawaitable(result):
-                    result = asyncio.run(result)
-            result_queue.put(("ok", result))
-        except Exception as exc:
-            result_queue.put(("error", exc))
-
-    result_queue: multiprocessing.Queue = multiprocessing.Queue()
-    process = multiprocessing.Process(
-        target=_worker,
-        args=(handler, payload, result_queue),
-        daemon=True,
-    )
-    process.start()
-    process.join(timeout=int(_SETTINGS.sandbox_cpu_limit_seconds) + 5)
-
-    if process.is_alive():
-        process.terminate()
-        process.join(timeout=2)
-        raise asyncio.TimeoutError(
-            f"Handler exceeded sandbox CPU limit of {_SETTINGS.sandbox_cpu_limit_seconds}s"
-        )
-
-    status, result = result_queue.get()
-    if status == "error":
-        raise result
-    return result
-
-
-def _calculate_retry_delay(attempt_count: int) -> int:
-    delay = _RETRY_BASE_DELAY_SECONDS * (2 ** (attempt_count - 1))
-    target = min(delay, _RETRY_MAX_DELAY_SECONDS)
-    # Match the smallest bucket >= target, or max bucket
-    for bucket in RETRY_BUCKETS:
-        if bucket >= target:
-            return bucket
-    return RETRY_BUCKETS[-1]
-
-
-async def create_attempt(db, task: Task, worker_id=None) -> TaskAttempt:
-    attempt = TaskAttempt(
-        task_id=task.id,
-        attempt_number=task.attempt_count,
-        worker_id=worker_id,
-        started_at=datetime.now(timezone.utc),
-    )
-    db.add(attempt)
-    await db.flush()
-    return attempt
-
-
-async def _mark_success(db, task: Task, attempt: TaskAttempt, worker_id=None, result=None) -> None:
-    task.status = "succeeded"
-    task.completed_at = datetime.now(timezone.utc)
-    if isinstance(result, dict):
-        task.result = result
-        attempt.result = result
-    attempt.outcome = "success"
-    attempt.finished_at = datetime.now(timezone.utc)
-    attempt.error_message = None
-    attempt.error_detail = None
-    await db.commit()
-    await _update_worker_stats(db, worker_id, tasks_processed=1)
-
-    # Publish SSE event via Redis Pub/Sub (IMP-19)
-    try:
-        from app.core.redis import get_redis
-        redis_client = await get_redis()
-        event_payload = json.dumps({
-            "task_id": str(task.id),
-            "status": task.status,
-            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-            "result": task.result,
-        })
-        await redis_client.publish(f"task:events:{task.id}", event_payload)
-    except Exception as exc:
-        logger.debug("Failed to publish SSE event for task %s: %s", task.id, exc)
-
-
-async def _mark_failure(
-    db, task: Task, attempt: TaskAttempt, outcome: str, exc: Exception | None = None, worker_id=None
-) -> None:
-    attempt.outcome = outcome
-    attempt.finished_at = datetime.now(timezone.utc)
-    if exc is not None:
-        attempt.error_message = str(exc)
-        attempt.error_detail = {"traceback": traceback.format_exc()}
-    if task.attempt_count < task.max_attempts:
-        task.status = "retrying"
-    else:
-        task.status = "failed"
-    await db.commit()
-    if outcome == "failure":
-        await _update_worker_stats(db, worker_id, tasks_failed=1)
-
-    # Publish SSE event via Redis Pub/Sub (IMP-19)
-    try:
-        from app.core.redis import get_redis
-        redis_client = await get_redis()
-        event_payload = json.dumps({
-            "task_id": str(task.id),
-            "status": task.status,
-            "error_message": attempt.error_message,
-        })
-        await redis_client.publish(f"task:events:{task.id}", event_payload)
-    except Exception as redis_exc:
-        logger.debug("Failed to publish SSE event for task %s: %s", task.id, redis_exc)
-
-
-async def _update_worker_stats(
-    db,
-    worker_id,
-    tasks_processed: int = 0,
-    tasks_failed: int = 0,
-) -> None:
-    if worker_id is None:
-        return
-    await db.execute(
-        update(WorkerRegistration)
-        .where(WorkerRegistration.id == worker_id)
-        .values(
-            tasks_processed=WorkerRegistration.tasks_processed + tasks_processed,
-            tasks_failed=WorkerRegistration.tasks_failed + tasks_failed,
-        )
-    )
-    await db.commit()
-
-
-async def _register_worker(db) -> WorkerRegistration:
-    # A crash/restart skips the graceful offline update — reclaim any stale
-    # 'online' row for this hostname so restarts don't pile up phantoms.
-    await db.execute(
-        update(WorkerRegistration)
-        .where(
-            WorkerRegistration.hostname == _WORKER_HOSTNAME,
-            WorkerRegistration.status == "online",
-        )
-        .values(status="offline")
-    )
-    worker = WorkerRegistration(
-        hostname=_WORKER_HOSTNAME,
-        status="online",
-        concurrency_limit=_SETTINGS.worker_concurrency,
-    )
-    db.add(worker)
-    # commit (not just flush): the caller's session closes right after
-    # registration, and an uncommitted row would be rolled back.
-    await db.commit()
-    await db.refresh(worker)
-    logger.info("Worker registered: id=%s hostname=%s", worker.id, worker.hostname)
-    workers_online_total.set(1)
-    return worker
-
-
-async def _update_heartbeat(db, worker: WorkerRegistration) -> None:
-    await db.execute(
-        update(WorkerRegistration)
-        .where(WorkerRegistration.id == worker.id)
-        .values(
-            last_heartbeat_at=datetime.now(timezone.utc),
-            current_task_count=_active_task_count,
-        )
-    )
-    await db.commit()
-
-
-async def _set_worker_offline(db, worker_id) -> None:
-    await db.execute(
-        update(WorkerRegistration)
-        .where(WorkerRegistration.id == worker_id)
-        .values(status="offline")
-    )
-    await db.commit()
-    logger.info("Worker marked offline: id=%s", worker_id)
-    workers_online_total.set(0)
+_SHUTDOWN_TIMEOUT_SECONDS = 30
 
 
 async def consume_task(
@@ -301,8 +86,6 @@ async def consume_task(
 
     Returns:
         (final_status, attempt_count, max_attempts, defer_seconds)
-        defer_seconds is set only for the "scheduled" status, telling the
-        caller how long until the task's future run_at comes due.
     """
     from app.core.tracing import extract_trace_context
     trace_id, span_id = extract_trace_context({"traceparent": traceparent} if traceparent else None)
@@ -404,40 +187,8 @@ async def consume_task(
         _active_task_count -= 1
 
 
-async def _publish_retry(
-    publisher, task_id: str, task_type: str, delay_seconds: int
-) -> None:
-    # Snap delay to known bucket to prevent HoL blocking
-    delay = RETRY_BUCKETS[-1]
-    for bucket in RETRY_BUCKETS:
-        if bucket >= delay_seconds:
-            delay = bucket
-            break
-
-    body = task_id.encode("utf-8")
-    message = aio_pika.Message(
-        body,
-        content_type="text/plain",
-        delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-        headers={
-            "x-task-type": task_type,
-            "x-task-id": task_id,
-        },
-    )
-    routing_key = f"tasks.{task_type}.retry.{delay}s"
-    await publisher.exchange.publish(
-        message,
-        routing_key=routing_key,
-    )
-    logger.info(
-        "Published retry for task %s to bucket '%s' (%ds delay).",
-        task_id,
-        routing_key,
-        delay,
-    )
-
-
 async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> None:
+    """AMQP message callback."""
     task_id = message.body.decode("utf-8")
     task_type = message.headers.get("x-task-type", "unknown")
     traceparent = message.headers.get("traceparent")
@@ -453,16 +204,11 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
                 )
             )
 
-        # Terminal states must not be re-published — only failures retry.
-        # Without this check, a task succeeding below max_attempts would be
-        # routed to the retry queue forever.
         if final_status in ("not_found", "succeeded", "cancelled"):
             await message.ack()
             return
 
         if final_status == "scheduled":
-            # Future run_at: park the message on the retry queue with a TTL
-            # that expires when the task comes due, then ack this copy.
             await _publish_retry(publisher, task_id, task_type, defer_seconds)
             await message.ack()
             return
@@ -474,9 +220,6 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
             await message.ack()
             return
 
-        # Attempts exhausted: record dead_letter in Postgres, then reject the
-        # message so the main queue's DLX deposits it in tasks.<type>.dlq —
-        # this is what gives the broker DLQ (and dlq_depth metrics) content.
         marked_dead = False
         async with AsyncSessionLocal() as db_retry:
             result = await db_retry.execute(select(Task).where(Task.id == task_id))
@@ -499,9 +242,6 @@ async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> No
             await message.ack()
 
     except Exception:
-        # Infra-level failure (e.g. DB unavailable) — do NOT ack, or the
-        # message is lost while the task row stays 'queued' forever.
-        # Requeue so RabbitMQ redelivers once the dependency recovers.
         logger.exception(
             "Unexpected error processing task %s — requeueing.", task_id
         )
@@ -513,91 +253,24 @@ async def _heartbeat_loop(worker: WorkerRegistration) -> None:
         await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
         try:
             async with AsyncSessionLocal() as db:
-                await _update_heartbeat(db, worker)
+                await _update_heartbeat(db, worker, active_count=_active_task_count)
         except Exception:
             logger.exception("Heartbeat update failed for worker %s", worker.id)
 
 
-_inflight_tasks: set[asyncio.Task] = set()
-_SHUTDOWN_TIMEOUT_SECONDS = 30
-
-
 async def subscribe_queues(publisher, worker_id=None, shutdown_event=None) -> list[tuple[Any, str]]:
-    channel = publisher.channel
-    if channel is None:
-        raise RuntimeError("RabbitMQ channel not available.")
-
-    exchange = publisher.exchange
-    if exchange is None:
-        raise RuntimeError("RabbitMQ exchange not available.")
-
-    def _make_handler(pub):
-        async def handler(msg):
-            if shutdown_event and shutdown_event.is_set():
-                await msg.reject(requeue=True)
-                return
-            current = asyncio.current_task()
-            if current:
-                _inflight_tasks.add(current)
-            try:
-                await on_message(msg, pub, worker_id=worker_id)
-            finally:
-                if current:
-                    _inflight_tasks.discard(current)
-        return handler
-
-    consumers = []
-    for task_type in TASK_TYPES:
-        main_queue_name = f"tasks.{task_type}"
-        queue = await channel.declare_queue(
-            main_queue_name,
-            durable=True,
-            arguments={
-                "x-dead-letter-exchange": EXCHANGE_NAME,
-                "x-dead-letter-routing-key": f"tasks.{task_type}.dlq",
-                "x-max-priority": 10,
-            },
-        )
-        await queue.bind(exchange, routing_key=task_type)
-        tag = await queue.consume(_make_handler(publisher))
-        if tag:
-            consumers.append((queue, tag))
-        logger.info(
-            "Subscribed to queue '%s' (routing key: %s).",
-            main_queue_name,
-            task_type,
-        )
-
-        # Declare discrete bucketed retry queues with queue-level x-message-ttl
-        # to prevent head-of-line blocking (IMP-09).
-        for bucket_sec in RETRY_BUCKETS:
-            bucket_queue_name = f"tasks.{task_type}.retry.{bucket_sec}s"
-            bucket_queue = await channel.declare_queue(
-                bucket_queue_name,
-                durable=True,
-                arguments={
-                    "x-dead-letter-exchange": EXCHANGE_NAME,
-                    "x-dead-letter-routing-key": task_type,
-                    "x-message-ttl": bucket_sec * 1000,
-                },
-            )
-            await bucket_queue.bind(
-                exchange, routing_key=f"tasks.{task_type}.retry.{bucket_sec}s"
-            )
-            logger.info("Declared bucketed retry queue '%s' (TTL=%ds).", bucket_queue_name, bucket_sec)
-
-        dlq_queue_name = f"tasks.{task_type}.dlq"
-        dlq_queue = await channel.declare_queue(
-            dlq_queue_name,
-            durable=True,
-        )
-        await dlq_queue.bind(exchange, routing_key=f"tasks.{task_type}.dlq")
-        logger.info("Declared DLQ '%s' (messages are terminal).", dlq_queue_name)
-
-    return consumers
+    """Backward-compatible helper redirecting to consumer.subscribe_queues."""
+    return await _consumer_subscribe_queues(
+        publisher=publisher,
+        on_message_callback=on_message,
+        worker_id=worker_id,
+        shutdown_event=shutdown_event,
+        task_types=TASK_TYPES,
+    )
 
 
 async def main() -> None:
+    """Worker main entrypoint."""
     _metrics_port = int(os.environ.get("PORT_METRICS", 9001))
     start_metrics_server(_metrics_port)
 
@@ -644,14 +317,12 @@ async def main() -> None:
 
         await shutdown_event.wait()
 
-        # Stop consuming new messages
         for queue, tag in consumers:
             try:
                 await queue.cancel(tag)
             except Exception:
                 pass
 
-        # Drain in-flight tasks
         if _inflight_tasks:
             logger.info("Waiting for %d in-flight task(s) to finish...", len(_inflight_tasks))
             try:
