@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None
 
+    # Outbox Relay (FEAT-02)
+    outbox_relay_enabled: bool = False
+    outbox_poll_interval_seconds: float = 1.0
+    outbox_batch_size: int = 50
+    outbox_retention_hours: int = 24
+    outbox_cleanup_interval_seconds: int = 3600
+
     # Backpressure
     backpressure_enabled: bool = False
     backpressure_queue_depth_threshold: int = 500

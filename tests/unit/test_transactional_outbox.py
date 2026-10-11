@@ -78,6 +78,8 @@ async def test_drain_outbox_relays_pending_messages():
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [record1, record2]
     mock_db.execute.return_value = mock_result
+    records_by_id = {record1.id: record1, record2.id: record2}
+    mock_db.get = AsyncMock(side_effect=lambda model, rid: records_by_id.get(rid))
 
     with patch("app.core.outbox.publish_task", new_callable=AsyncMock) as mock_pub:
         drained = await drain_outbox(mock_db, limit=10)

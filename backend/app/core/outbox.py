@@ -1,28 +1,19 @@
-"""Transactional Outbox processor and drain utility (IMP-12)."""
+"""Transactional Outbox processor and drain utility (IMP-12 / FEAT-02)."""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-
-from sqlalchemy import select, update
-from app.models.task_outbox import TaskOutbox
+from app.outbox.service import claim_pending_events, mark_published, mark_failed
 from app.core.rabbitmq import publish_task
 
 logger = logging.getLogger(__name__)
 
 
 async def drain_outbox(db, limit: int = 50) -> int:
-    """Drain pending outbox rows by publishing them to RabbitMQ.
+    """Drain pending outbox rows safely using SKIP LOCKED.
 
     Returns the count of successfully published rows.
     """
-    result = await db.execute(
-        select(TaskOutbox)
-        .where(TaskOutbox.status == "pending")
-        .order_by(TaskOutbox.created_at.asc())
-        .limit(limit)
-    )
-    pending_records = result.scalars().all()
+    pending_records = await claim_pending_events(db, batch_size=limit)
     if not pending_records:
         return 0
 
@@ -34,13 +25,10 @@ async def drain_outbox(db, limit: int = 50) -> int:
                 task_type=record.task_type,
                 priority=record.priority,
             )
-            record.status = "published"
-            record.processed_at = datetime.now(timezone.utc)
+            await mark_published(db, record.id)
             drained_count += 1
         except Exception as exc:
-            record.retry_count += 1
-            if record.retry_count >= 10:
-                record.status = "failed"
+            await mark_failed(db, record.id, error=str(exc))
             logger.warning(
                 "Failed to relay outbox record %s (task %s): %s",
                 record.id,
@@ -48,5 +36,4 @@ async def drain_outbox(db, limit: int = 50) -> int:
                 exc,
             )
 
-    await db.commit()
     return drained_count

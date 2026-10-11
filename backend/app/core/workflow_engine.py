@@ -104,12 +104,29 @@ async def resolve_and_dispatch_downstream(db: AsyncSession, completed_task_id: U
                 if step.task:
                     step.task.status = "queued"
                     step.task.run_at = datetime.now(timezone.utc)
-                    await publish_task(
-                        str(step.task.id),
-                        step.task.task_type,
+                    from app.outbox.service import create_outbox_event, mark_published
+                    outbox_entry = await create_outbox_event(
+                        db=db,
+                        task_id=step.task.id,
+                        task_type=step.task.task_type,
+                        payload=step.task.payload or {},
                         priority=step.task.priority,
+                        event_type="workflow_step_queued",
                     )
                     dispatched_task_ids.append(step.task.id)
+                    try:
+                        await publish_task(
+                            str(step.task.id),
+                            step.task.task_type,
+                            priority=step.task.priority,
+                        )
+                        await mark_published(db, outbox_entry.id)
+                    except Exception as pub_exc:
+                        logger.warning(
+                            "Failed immediate publish for workflow step task %s: %s (outbox relay will retry)",
+                            step.task.id,
+                            pub_exc,
+                        )
                     logger.info(
                         "Dispatched workflow %s step '%s' (task=%s)",
                         workflow_id,

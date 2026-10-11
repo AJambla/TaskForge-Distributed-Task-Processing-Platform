@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -58,9 +59,23 @@ async def _check_rabbitmq() -> tuple[bool, str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
-    from app.database import engine
-    await engine.dispose()
+    relay_task = None
+    if settings.outbox_relay_enabled:
+        from app.outbox.relay import OutboxRelayService
+        relay_service = OutboxRelayService()
+        relay_task = asyncio.create_task(relay_service.start())
+        logging.getLogger("api").info("Spawned in-process OutboxRelayService.")
+    try:
+        yield
+    finally:
+        if relay_task:
+            relay_task.cancel()
+            try:
+                await relay_task
+            except asyncio.CancelledError:
+                pass
+        from app.database import engine
+        await engine.dispose()
 
 app = FastAPI(
     title="TaskForge",
