@@ -13,7 +13,6 @@ import {
   Ban,
   Mail,
   RotateCcw,
-  Image as ImageIcon,
   Webhook,
 } from "lucide-react";
 import { durationBetween, relativeTime, shortId } from "../../lib/format";
