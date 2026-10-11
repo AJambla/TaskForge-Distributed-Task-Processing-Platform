@@ -84,6 +84,23 @@ async def _auth_via_jwt(token: str, db: AsyncSession) -> User:
             detail={"error": {"code": "INVALID_TOKEN", "message": "Invalid subject in token."}},
         )
 
+    redis_client = None
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        cached_raw = await redis_client.get(f"auth:user:{user_id}")
+        if cached_raw:
+            import json
+            data = json.loads(cached_raw)
+            return User(
+                id=uuid.UUID(data["id"]),
+                email=data["email"],
+                password_hash=data.get("password_hash", ""),
+                role=data.get("role", "user"),
+            )
+    except Exception:
+        pass
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
@@ -92,6 +109,19 @@ async def _auth_via_jwt(token: str, db: AsyncSession) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": {"code": "USER_NOT_FOUND", "message": "User no longer exists."}},
         )
+
+    if redis_client is not None:
+        try:
+            import json
+            user_data = {
+                "id": str(user.id),
+                "email": user.email,
+                "password_hash": user.password_hash,
+                "role": user.role,
+            }
+            await redis_client.set(f"auth:user:{user.id}", json.dumps(user_data), ex=60)
+        except Exception:
+            pass
 
     return user
 
@@ -132,7 +162,24 @@ async def _auth_via_api_key(raw_key: str, db: AsyncSession) -> User:
         )
         await db.commit()
 
-    # Load the user
+    # Load the user (checking cache first)
+    redis_client = None
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        cached_raw = await redis_client.get(f"auth:user:{api_key.user_id}")
+        if cached_raw:
+            import json
+            data = json.loads(cached_raw)
+            return User(
+                id=uuid.UUID(data["id"]),
+                email=data["email"],
+                password_hash=data.get("password_hash", ""),
+                role=data.get("role", "user"),
+            )
+    except Exception:
+        pass
+
     result = await db.execute(select(User).where(User.id == api_key.user_id))
     user = result.scalar_one_or_none()
 
@@ -141,6 +188,19 @@ async def _auth_via_api_key(raw_key: str, db: AsyncSession) -> User:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": {"code": "USER_NOT_FOUND", "message": "User not found."}},
         )
+
+    if redis_client is not None:
+        try:
+            import json
+            user_data = {
+                "id": str(user.id),
+                "email": user.email,
+                "password_hash": user.password_hash,
+                "role": user.role,
+            }
+            await redis_client.set(f"auth:user:{user.id}", json.dumps(user_data), ex=60)
+        except Exception:
+            pass
 
     return user
 
