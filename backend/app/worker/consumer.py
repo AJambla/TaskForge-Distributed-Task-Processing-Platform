@@ -32,7 +32,12 @@ async def subscribe_queues(
     if exchange is None:
         raise RuntimeError("RabbitMQ exchange not available.")
 
-    types = task_types or TASK_TYPES
+    if task_types is not None:
+        types = task_types
+    else:
+        from app.worker.handlers import list_handlers
+        registered = list(list_handlers().keys())
+        types = registered if registered else TASK_TYPES
 
     def _make_handler(pub):
         async def handler(msg):

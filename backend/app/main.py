@@ -142,6 +142,13 @@ app.include_router(storage.router, prefix="/api/v1", tags=["storage"])
 app.include_router(workers.router, prefix="/api/v1/workers", tags=["workers"])
 app.include_router(queues.router, prefix="/api/v1/queues", tags=["queues"])
 
+
+@app.get("/api/v1/handlers", tags=["tasks"], summary="List registered handlers")
+async def get_handlers_root():
+    from app.worker.handlers import list_handlers
+    return {"handlers": list_handlers()}
+
+
 # Prometheus instrumentator — exclude healthz and the custom metrics endpoint
 Instrumentator(
     should_group_status_codes=True,

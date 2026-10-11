@@ -140,9 +140,10 @@ async def create_task(
     if not run_at:
         run_at = now
 
+    task_type_str = body.task_type.value if hasattr(body.task_type, "value") else str(body.task_type)
     task = Task(
         user_id=current_user.id,
-        task_type=body.task_type.value,
+        task_type=task_type_str,
         payload=body.payload,
         priority=body.priority,
         idempotency_key=idempotency_key,
@@ -248,9 +249,10 @@ async def create_tasks_bulk(
 
     for req in body.tasks:
         run_at = req.run_at or now
+        task_type_str = req.task_type.value if hasattr(req.task_type, "value") else str(req.task_type)
         task = Task(
             user_id=current_user.id,
-            task_type=req.task_type.value,
+            task_type=task_type_str,
             payload=req.payload,
             priority=req.priority,
             idempotency_key=req.idempotency_key,
@@ -785,4 +787,16 @@ async def stream_task_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get(
+    "/handlers",
+    summary="List all registered task handlers and metadata (FEAT-06)",
+    tags=["tasks"],
+)
+async def get_registered_handlers() -> dict[str, Any]:
+    """Retrieve all discovered and registered task handlers with their configuration."""
+    from app.worker.handlers import list_handlers
+    return {"handlers": list_handlers()}
+
 
