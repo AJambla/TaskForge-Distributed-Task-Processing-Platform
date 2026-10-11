@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Application
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
+    log_format: Literal["json", "text"] = "json"
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Database

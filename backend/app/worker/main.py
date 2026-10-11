@@ -25,6 +25,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.core.logging import configure_logging
 from app.core.rabbitmq import close_publisher, get_publisher
 from app.core.redis import close_redis
 from app.database import AsyncSessionLocal, engine
@@ -42,9 +43,10 @@ from app.worker.metrics import (
 
 _SETTINGS = get_settings()
 
-logging.basicConfig(
-    level=getattr(logging, _SETTINGS.log_level.upper(), logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+configure_logging(
+    service_name=f"worker-{_SETTINGS.worker_hostname}",
+    log_level=_SETTINGS.log_level,
+    json_format=(_SETTINGS.log_format == "json"),
 )
 logger = logging.getLogger("worker")
 

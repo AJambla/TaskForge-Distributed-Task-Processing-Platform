@@ -9,15 +9,17 @@ import logging
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
+from app.core.logging import configure_logging
 from app.core.rabbitmq import get_publisher
 from app.core.redis import get_redis
 from app.database import engine
 from app.routers import api_keys, auth, queues, tasks, workers
 
 settings = get_settings()
-logging.basicConfig(
-    level=getattr(logging, settings.log_level.upper(), logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+configure_logging(
+    service_name="api",
+    log_level=settings.log_level,
+    json_format=(settings.log_format == "json"),
 )
 cors_origins_list = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 
