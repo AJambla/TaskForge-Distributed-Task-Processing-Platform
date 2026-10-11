@@ -1,24 +1,94 @@
-"""W3C Distributed Tracing context propagation utilities (IMP-20).
+"""W3C Distributed Tracing and OpenTelemetry context propagation utilities (FEAT-03 & IMP-20).
 
-Adheres to W3C Trace Context recommendation:
-Format: traceparent: 00-{trace_id}-{parent_id/span_id}-{trace_flags}
-- version: 2 hex characters ("00")
-- trace_id: 32 hex characters (16 bytes)
-- parent_id: 16 hex characters (8 bytes)
-- trace_flags: 2 hex characters ("01" for sampled)
+Adheres to OpenTelemetry Python API and W3C Trace Context specifications.
+Provides:
+- OpenTelemetry SDK TracerProvider & OTLP SpanExporter initialization
+- Carrier injection/extraction using TraceContextTextMapPropagator
+- Span context helpers (trace_id formatting, span lifecycle)
+- Backward-compatible W3C traceparent formatting/parsing
 """
 from __future__ import annotations
 
-import os
+import logging
 import re
 import secrets
 from typing import Mapping
+
+from opentelemetry import trace
+from opentelemetry.trace import Span, Tracer
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+logger = logging.getLogger(__name__)
 
 _TRACEPARENT_PATTERN = re.compile(
     r"^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$",
     re.IGNORECASE,
 )
+_PROPAGATOR = TraceContextTextMapPropagator()
 
+
+def init_tracer(service_name: str = "taskforge", otlp_endpoint: str | None = None) -> Tracer:
+    """Initialize OpenTelemetry TracerProvider with optional OTLP HTTP SpanExporter."""
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    resource = Resource.create({"service.name": service_name})
+    provider = TracerProvider(resource=resource)
+
+    if otlp_endpoint:
+        try:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+            exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+            provider.add_span_processor(BatchSpanProcessor(exporter))
+            logger.info("OpenTelemetry OTLP exporter configured for %s", otlp_endpoint)
+        except Exception as exc:
+            logger.warning("Failed to configure OTLP exporter: %s", exc)
+
+    trace.set_tracer_provider(provider)
+    return trace.get_tracer(service_name)
+
+
+def get_tracer(service_name: str = "taskforge") -> Tracer:
+    """Get or return the active OpenTelemetry tracer."""
+    return trace.get_tracer(service_name)
+
+
+def get_current_trace_id() -> str | None:
+    """Return the current active 32-character hex trace ID, or None if no active span."""
+    span = trace.get_current_span()
+    ctx = span.get_span_context()
+    if ctx.is_valid:
+        return format(ctx.trace_id, "032x")
+    return None
+
+
+def get_current_span_id() -> str | None:
+    """Return the current active 16-character hex span ID, or None if no active span."""
+    span = trace.get_current_span()
+    ctx = span.get_span_context()
+    if ctx.is_valid:
+        return format(ctx.span_id, "016x")
+    return None
+
+
+def inject_carrier() -> dict[str, str]:
+    """Inject current span context into a W3C carrier dictionary (e.g. for HTTP/AMQP headers)."""
+    carrier: dict[str, str] = {}
+    _PROPAGATOR.inject(carrier)
+    return carrier
+
+
+def extract_context_from_carrier(carrier: Mapping[str, str] | None):
+    """Extract OpenTelemetry context from an inbound carrier dictionary."""
+    if not carrier:
+        return None
+    # Normalize header casing if necessary
+    normalized = {k.lower(): v for k, v in carrier.items() if isinstance(v, str)}
+    return _PROPAGATOR.extract(carrier=normalized)
+
+
+# --- Backward-compatible & fallback utilities ---
 
 def generate_trace_id() -> str:
     """Generate a random 32-character hex trace ID."""
@@ -48,18 +118,16 @@ def parse_traceparent(traceparent: str | None) -> tuple[str | None, str | None, 
     match = _TRACEPARENT_PATTERN.match(traceparent.strip())
     if not match:
         return None, None, False
-    version, trace_id, parent_id, flags = match.groups()
+    version, trace_id_val, parent_id_val, flags = match.groups()
     if version != "00":
         return None, None, False
-    # Validate trace_id is not all zeros
-    if trace_id == "00000000000000000000000000000000":
+    if trace_id_val == "00000000000000000000000000000000":
         return None, None, False
-    # Validate parent_id is not all zeros
-    if parent_id == "0000000000000000":
+    if parent_id_val == "0000000000000000":
         return None, None, False
 
     is_sampled = (int(flags, 16) & 0x01) == 1
-    return trace_id, parent_id, is_sampled
+    return trace_id_val, parent_id_val, is_sampled
 
 
 def extract_trace_context(headers: Mapping[str, str] | None) -> tuple[str, str]:
@@ -71,9 +139,8 @@ def extract_trace_context(headers: Mapping[str, str] | None) -> tuple[str, str]:
     if headers:
         for key in ("traceparent", "Traceparent", "TRACEPARENT"):
             if key in headers:
-                trace_id, parent_id, _ = parse_traceparent(headers[key])
-                if trace_id:
-                    return trace_id, generate_span_id()
+                trace_id_val, parent_id_val, _ = parse_traceparent(headers[key])
+                if trace_id_val:
+                    return trace_id_val, generate_span_id()
 
-    # Generate new trace context
     return generate_trace_id(), generate_span_id()

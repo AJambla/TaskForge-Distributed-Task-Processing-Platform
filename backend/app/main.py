@@ -105,6 +105,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# OpenTelemetry Instrumentation (FEAT-03)
+if settings.otel_enabled:
+    from app.core.tracing import init_tracer
+    init_tracer(
+        service_name=settings.otel_service_name,
+        otlp_endpoint=settings.otel_exporter_otlp_endpoint,
+    )
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor.instrument_app(app)
+    except Exception as otel_err:
+        logging.getLogger("api").warning("FastAPI OTel instrumentation skipped: %s", otel_err)
+    try:
+        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+        SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
+    except Exception as sql_err:
+        logging.getLogger("api").warning("SQLAlchemy OTel instrumentation skipped: %s", sql_err)
+
 # Exception handlers
 register_exception_handlers(app)
 

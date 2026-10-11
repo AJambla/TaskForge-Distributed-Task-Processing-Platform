@@ -42,6 +42,7 @@ class TaskOutbox(Base):
     )
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     priority: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    traceparent: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending", server_default="pending"
     )

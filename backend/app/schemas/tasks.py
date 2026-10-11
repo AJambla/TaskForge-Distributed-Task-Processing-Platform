@@ -110,6 +110,35 @@ class TaskResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     result: dict[str, Any] | None = None
+    trace_id: str | None = None
+    trace_url: str | None = None
+
+    @classmethod
+    def from_task(cls, task: Any) -> "TaskResponse":
+        """Build TaskResponse from Task ORM model and interpolate trace_url if trace_id exists."""
+        from app.config import get_settings
+        settings = get_settings()
+        t_id = getattr(task, "trace_id", None)
+        t_url = settings.jaeger_ui_url.format(trace_id=t_id) if t_id else None
+        data = {
+            "id": task.id,
+            "user_id": task.user_id,
+            "task_type": task.task_type,
+            "status": task.status,
+            "priority": task.priority,
+            "idempotency_key": task.idempotency_key,
+            "max_attempts": task.max_attempts,
+            "attempt_count": task.attempt_count,
+            "run_at": task.run_at,
+            "recurrence_rule": task.recurrence_rule,
+            "created_at": task.created_at,
+            "started_at": task.started_at,
+            "completed_at": task.completed_at,
+            "result": task.result,
+            "trace_id": t_id,
+            "trace_url": t_url,
+        }
+        return cls(**data)
 
     model_config = {"from_attributes": True}
 

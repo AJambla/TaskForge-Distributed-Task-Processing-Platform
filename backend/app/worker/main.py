@@ -90,6 +90,13 @@ async def consume_task(
     from app.core.tracing import extract_trace_context
     trace_id, span_id = extract_trace_context({"traceparent": traceparent} if traceparent else None)
 
+    from app.core.tracing import extract_context_from_carrier, get_tracer
+    from opentelemetry.trace import Status, StatusCode
+
+    carrier = {"traceparent": traceparent} if traceparent else None
+    extracted_ctx = extract_context_from_carrier(carrier)
+    tracer = get_tracer("taskforge.worker")
+
     result = await db.execute(
         select(Task)
         .where(Task.id == task_id)
@@ -100,34 +107,43 @@ async def consume_task(
         logger.warning("[trace=%s] Task %s not found in DB — skipping.", trace_id, task_id)
         return "not_found", 0, 0, None
 
+    # Resolve trace_id from task or inbound trace
+    resolved_trace_id = getattr(task, "trace_id", None) or trace_id
+
     if task.status in ("cancelled", "succeeded"):
-        logger.info("[trace=%s] Task %s already terminal — skipping.", trace_id, task_id)
+        logger.info("[trace=%s] Task %s already terminal — skipping.", resolved_trace_id, task_id)
         return task.status, task.attempt_count, task.max_attempts, None
 
     if task.run_at and task.run_at > datetime.now(timezone.utc):
         defer_seconds = int((task.run_at - datetime.now(timezone.utc)).total_seconds()) + 1
         logger.info(
             "[trace=%s] Task %s scheduled for %s — deferring %ds.",
-            trace_id,
+            resolved_trace_id,
             task_id,
             task.run_at.isoformat(),
             defer_seconds,
         )
         return "scheduled", task.attempt_count, task.max_attempts, defer_seconds
 
+    # Measure queue latency if created_at exists
+    now_utc = datetime.now(timezone.utc)
+    queue_latency_ms = None
+    if task.created_at:
+        queue_latency_ms = max(0.0, (now_utc - task.created_at).total_seconds() * 1000.0)
+
     task.status = "running"
-    task.started_at = datetime.now(timezone.utc)
+    task.started_at = now_utc
     task.attempt_count += 1
     max_attempts = task.max_attempts
     await db.flush()
 
-    attempt = await create_attempt(db, task, worker_id=worker_id)
+    attempt = await create_attempt(db, task, worker_id=worker_id, trace_id=resolved_trace_id)
     task_attempts_total.inc()
     await db.commit()
 
     logger.info(
         "[trace=%s] Processing task %s (type=%s, attempt=%d, status=%s, worker=%s)",
-        trace_id,
+        resolved_trace_id,
         task_id,
         task_type,
         attempt.attempt_number,
@@ -141,48 +157,72 @@ async def consume_task(
     global _active_task_count
     _active_task_count += 1
     try:
-        try:
-            start = asyncio.get_event_loop().time()
-            if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
-                result = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(
-                        None, _run_handler_in_sandbox, handler, task.payload
-                    ),
-                    timeout=timeout,
-                )
-            else:
-                result = await asyncio.wait_for(
-                    handler(task.payload), timeout=timeout
-                )
-            elapsed = asyncio.get_event_loop().time() - start
-            task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-            await _mark_success(db, task, attempt, worker_id=worker_id, result=result)
-            tasks_processed_total.labels(
-                outcome="success", task_type=task_type
-            ).inc()
-            return "succeeded", task.attempt_count, max_attempts, None
+        with tracer.start_as_current_span("task.execute", context=extracted_ctx) as span:
+            span.set_attribute("task.id", str(task_id))
+            span.set_attribute("task.type", str(task_type))
+            span.set_attribute("task.priority", int(task.priority))
+            span.set_attribute("task.attempt", int(attempt.attempt_number))
+            if worker_id:
+                span.set_attribute("worker.id", str(worker_id))
+            span.set_attribute("worker.hostname", _SETTINGS.worker_hostname)
+            if queue_latency_ms is not None:
+                span.set_attribute("queue_latency_ms", float(queue_latency_ms))
 
-        except asyncio.TimeoutError as exc:
-            elapsed = asyncio.get_event_loop().time() - start
-            task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-            await _mark_failure(
-                db, task, attempt, "timeout", exc, worker_id=worker_id
-            )
-            tasks_processed_total.labels(
-                outcome="timeout", task_type=task_type
-            ).inc()
-            return "timeout", task.attempt_count, max_attempts, None
+            try:
+                start = asyncio.get_event_loop().time()
+                if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
+                    result = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None, _run_handler_in_sandbox, handler, task.payload
+                        ),
+                        timeout=timeout,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        handler(task.payload), timeout=timeout
+                    )
+                elapsed = asyncio.get_event_loop().time() - start
+                span.set_attribute("execution_latency_ms", float(elapsed * 1000.0))
+                span.set_attribute("task.status", "succeeded")
+                span.set_status(Status(StatusCode.OK))
+                task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+                await _mark_success(db, task, attempt, worker_id=worker_id, result=result)
+                tasks_processed_total.labels(
+                    outcome="success", task_type=task_type
+                ).inc()
+                return "succeeded", task.attempt_count, max_attempts, None
 
-        except Exception as exc:
-            elapsed = asyncio.get_event_loop().time() - start
-            task_duration_seconds.labels(task_type=task_type).observe(elapsed)
-            await _mark_failure(
-                db, task, attempt, "failure", exc, worker_id=worker_id
-            )
-            tasks_processed_total.labels(
-                outcome="failure", task_type=task_type
-            ).inc()
-            return "failed", task.attempt_count, max_attempts, None
+            except asyncio.TimeoutError as exc:
+                elapsed = asyncio.get_event_loop().time() - start
+                span.set_attribute("execution_latency_ms", float(elapsed * 1000.0))
+                span.set_attribute("task.status", "timeout")
+                span.set_attribute("error.type", "TimeoutError")
+                span.set_attribute("error.message", str(exc))
+                span.set_status(Status(StatusCode.ERROR, description=str(exc)))
+                task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+                await _mark_failure(
+                    db, task, attempt, "timeout", exc, worker_id=worker_id
+                )
+                tasks_processed_total.labels(
+                    outcome="timeout", task_type=task_type
+                ).inc()
+                return "timeout", task.attempt_count, max_attempts, None
+
+            except Exception as exc:
+                elapsed = asyncio.get_event_loop().time() - start
+                span.set_attribute("execution_latency_ms", float(elapsed * 1000.0))
+                span.set_attribute("task.status", "failure")
+                span.set_attribute("error.type", exc.__class__.__name__)
+                span.set_attribute("error.message", str(exc))
+                span.set_status(Status(StatusCode.ERROR, description=str(exc)))
+                task_duration_seconds.labels(task_type=task_type).observe(elapsed)
+                await _mark_failure(
+                    db, task, attempt, "failure", exc, worker_id=worker_id
+                )
+                tasks_processed_total.labels(
+                    outcome="failure", task_type=task_type
+                ).inc()
+                return "failed", task.attempt_count, max_attempts, None
     finally:
         _active_task_count -= 1
 

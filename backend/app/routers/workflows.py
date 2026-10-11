@@ -54,7 +54,11 @@ async def create_workflow(
     db.add(workflow)
     await db.flush()
 
-    ready_tasks_to_publish: list[tuple[Task, str, int]] = []
+    from app.core.tracing import create_traceparent, get_current_trace_id
+    wf_trace_id = get_current_trace_id() or create_traceparent().split("-")[1]
+    wf_traceparent = create_traceparent(trace_id=wf_trace_id)
+
+    ready_tasks_to_publish: list[tuple[Task, str, int, Any]] = []
 
     for step_in in body.steps:
         # Steps with zero dependencies start queued immediately; others wait as pending
@@ -69,6 +73,7 @@ async def create_workflow(
             status=task_status,
             priority=step_in.priority,
             run_at=datetime.now(timezone.utc) if is_root else None,
+            trace_id=wf_trace_id,
         )
         db.add(task)
         await db.flush()
@@ -90,6 +95,7 @@ async def create_workflow(
                 payload=step_in.payload,
                 priority=step_in.priority,
                 event_type="workflow_root_step",
+                traceparent=wf_traceparent,
             )
             ready_tasks_to_publish.append((task, step_in.task_type, step_in.priority, outbox_entry))
 
@@ -98,7 +104,12 @@ async def create_workflow(
     # Publish root tasks
     for task_obj, t_type, prio, outbox_item in ready_tasks_to_publish:
         try:
-            await publish_task(str(task_obj.id), t_type, priority=prio)
+            await publish_task(
+                str(task_obj.id),
+                t_type,
+                priority=prio,
+                traceparent=wf_traceparent,
+            )
             from app.outbox.service import mark_published
             await mark_published(db, outbox_item.id)
         except Exception as exc:

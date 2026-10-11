@@ -81,6 +81,7 @@ class OutboxRelayService:
                             task_id=str(event.task_id),
                             task_type=event.task_type,
                             priority=event.priority,
+                            traceparent=event.traceparent,
                         )
                         publish_duration = time.monotonic() - start_publish
                         outbox_publish_latency_seconds.observe(publish_duration)
