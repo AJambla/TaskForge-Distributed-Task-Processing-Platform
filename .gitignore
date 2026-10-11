@@ -56,3 +56,4 @@ load-tests/results/
 /frontend-vite*.log
 ui-ux-pro-max-skill/
 IMPROVEMENTS.md
+data/
