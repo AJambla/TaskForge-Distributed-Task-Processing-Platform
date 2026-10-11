@@ -1,5 +1,4 @@
-import { Link } from "react-router-dom";
-import { KeyRound, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
 import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
 import { useAuth } from "../../context/AuthContext";
@@ -45,17 +44,6 @@ export default function Settings() {
       </Panel>
 
       <Panel title="Access" delay={0.16} bodyClassName="">
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
-          style={{ borderTop: "1px solid var(--line-soft)" }}
-        >
-          <span className="text-sm" style={{ color: "var(--subtle)" }}>
-            Manage the API keys your services use to submit tasks
-          </span>
-          <Link to="/app/api-keys" className="navlink inline-flex items-center gap-1.5" style={{ color: "var(--brand)" }}>
-            <KeyRound size={14} /> API Keys
-          </Link>
-        </div>
         <div
           className="flex flex-wrap items-center justify-between gap-3 px-6 py-4"
           style={{ borderTop: "1px solid var(--line-soft)" }}
