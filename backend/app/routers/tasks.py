@@ -24,7 +24,13 @@ from app.core.deps import CurrentUser, DBSession
 from app.core.rabbitmq import check_backpressure, publish_task
 from app.core.rate_limit import make_rate_limiter
 from app.core.redis import check_idempotency, set_idempotency_task_id
+from app.models.artifact import Artifact
 from app.models.task import Task
+from app.schemas.artifacts import (
+    ArtifactItemResponse,
+    DownloadUrlResponse,
+    TaskResultResponse,
+)
 from app.schemas.tasks import (
     PaginationInfo,
     TaskBulkCreateRequest,
@@ -388,6 +394,102 @@ async def list_tasks(
     return TaskListResponse(
         data=[TaskResponse.model_validate(t) for t in tasks],
         pagination=PaginationInfo(page=page, page_size=page_size, total=total, next_cursor=next_cursor),
+    )
+
+
+async def get_task_with_artifacts(task_id: UUID, db: AsyncSession) -> Task | None:
+    """Helper to fetch task with joined artifacts."""
+    from sqlalchemy.orm import selectinload
+    stmt = select(Task).where(Task.id == task_id).options(selectinload(Task.artifacts))
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+@router.get("/{task_id}/result", response_model=TaskResultResponse, summary="Retrieve structured task results and artifacts")
+async def get_task_result(
+    task_id: UUID,
+    current_user: CurrentUser,
+    db: DBSession,
+) -> TaskResultResponse:
+    """Retrieve execution result and associated artifacts (ownership enforced)."""
+    task = await get_task_with_artifacts(task_id, db)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "TASK_NOT_FOUND", "message": "Task not found.", "field": None}},
+        )
+    is_admin = current_user.role == "admin"
+    if not is_admin and task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "TASK_NOT_FOUND", "message": "Task not found or access denied.", "field": None}},
+        )
+
+    artifacts = [
+        ArtifactItemResponse.model_validate(art) for art in (task.artifacts or [])
+    ]
+    return TaskResultResponse(
+        task_id=task.id,
+        status=task.status,
+        result=task.result,
+        artifacts=artifacts,
+    )
+
+
+@router.get("/{task_id}/download", response_model=DownloadUrlResponse, summary="Generate signed download URL for task artifact")
+async def get_task_download_url(
+    task_id: UUID,
+    current_user: CurrentUser,
+    db: DBSession,
+    artifact_id: UUID | None = Query(None, description="Specific artifact ID to download"),
+) -> DownloadUrlResponse:
+    """Generate temporary signed download URL for task artifact."""
+    task = await get_task_with_artifacts(task_id, db)
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "TASK_NOT_FOUND", "message": "Task not found.", "field": None}},
+        )
+    is_admin = current_user.role == "admin"
+    if not is_admin and task.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "TASK_NOT_FOUND", "message": "Task not found or access denied.", "field": None}},
+        )
+
+    task_artifacts = task.artifacts or []
+    if not task_artifacts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": {"code": "ARTIFACT_NOT_FOUND", "message": "No artifacts available for this task.", "field": None}},
+        )
+
+    target_art: Artifact | None = None
+    if artifact_id:
+        for art in task_artifacts:
+            if art.id == artifact_id:
+                target_art = art
+                break
+        if not target_art:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": {"code": "ARTIFACT_NOT_FOUND", "message": f"Artifact {artifact_id} not found on task.", "field": None}},
+            )
+    else:
+        target_art = task_artifacts[0]
+
+    from app.core.storage import get_storage_backend
+    storage = get_storage_backend()
+    expires_in = 900
+    download_url = storage.generate_download_url(
+        target_art.storage_key, filename=target_art.filename, expires_in=expires_in
+    )
+
+    return DownloadUrlResponse(
+        artifact_id=target_art.id,
+        filename=target_art.filename,
+        download_url=download_url,
+        expires_in=expires_in,
     )
 
 
