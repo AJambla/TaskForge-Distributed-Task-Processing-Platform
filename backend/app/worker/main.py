@@ -198,17 +198,6 @@ async def consume_task(
                 span.set_status(Status(StatusCode.OK))
                 task_duration_seconds.labels(task_type=task_type).observe(elapsed)
 
-                # Merge any artifacts uploaded via ctx into result if result is a dict
-                if ctx.uploaded_artifacts:
-                    if isinstance(result, dict):
-                        existing_artifacts = result.get("artifacts") or []
-                        if isinstance(existing_artifacts, list):
-                            result["artifacts"] = existing_artifacts + ctx.uploaded_artifacts
-                        else:
-                            result["artifacts"] = ctx.uploaded_artifacts
-                    elif result is None:
-                        result = {"artifacts": ctx.uploaded_artifacts}
-
                 await _mark_success(db, task, attempt, worker_id=worker_id, result=result)
                 tasks_processed_total.labels(
                     outcome="success", task_type=task_type

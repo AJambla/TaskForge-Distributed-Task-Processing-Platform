@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import importlib.metadata
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import BaseModel, Field
@@ -84,8 +84,8 @@ def test_entrypoint_discovery_registers_handlers():
 
 
 @pytest.mark.asyncio
-async def test_task_context_set_progress_and_upload_artifact():
-    """Verify TaskContext methods set progress and upload artifacts."""
+async def test_task_context_set_progress():
+    """Verify TaskContext sets progress via Redis."""
     ctx = TaskContext(
         task_id="123e4567-e89b-12d3-a456-426614174000",
         task_type="custom_task",
@@ -96,13 +96,9 @@ async def test_task_context_set_progress_and_upload_artifact():
     assert ctx.task_id == "123e4567-e89b-12d3-a456-426614174000"
     assert ctx.attempt == 2
 
-    # Test artifact upload
-    with patch("app.worker.context.get_storage_backend") as mock_storage_factory:
-        mock_storage = MagicMock()
-        mock_storage_factory.return_value = mock_storage
+    with patch("app.worker.context.get_redis", AsyncMock()) as mock_get_redis:
+        mock_redis = AsyncMock()
+        mock_get_redis.return_value = mock_redis
+        await ctx.set_progress(75, "Processing batches")
+        assert mock_redis.publish.called
 
-        art = await ctx.upload_artifact("test_doc.txt", b"hello world", "text/plain")
-        assert art["filename"] == "test_doc.txt"
-        assert art["size_bytes"] == 11
-        mock_storage.save.assert_called_once()
-        assert len(ctx.uploaded_artifacts) == 1
