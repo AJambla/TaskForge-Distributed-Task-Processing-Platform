@@ -17,6 +17,7 @@ import httpx
 from PIL import Image
 from pydantic import BaseModel, Field
 
+from app.core.ssrf import validate_url_ssrf_safe
 from app.worker.context import TaskContext
 from app.worker.handlers import register_handler
 
@@ -57,6 +58,7 @@ async def handle_image_resize(payload: dict[str, Any], ctx: TaskContext) -> dict
         _, b64_part = data_uri.split(",", 1)
         image_bytes = base64.b64decode(b64_part)
     elif source_url:
+        validate_url_ssrf_safe(source_url)
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
             resp = await client.get(source_url)
             resp.raise_for_status()
