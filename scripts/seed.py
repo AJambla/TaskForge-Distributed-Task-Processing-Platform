@@ -5,11 +5,9 @@ Seeds the database with test users, API keys, and diverse tasks across
 all lifecycle statuses (queued, running, succeeded, failed, dead_letter).
 """
 import asyncio
-import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import uuid
 
 # Ensure backend directory is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -17,13 +15,13 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from sqlalchemy import select
-from app.database import AsyncSessionLocal
-from app.models.user import User
-from app.models.api_key import APIKey
-from app.models.task import Task
-from app.models.task_attempt import TaskAttempt
-from app.core.security import hash_password, generate_api_key
+from app.core.security import generate_api_key, hash_password  # noqa: E402
+from app.database import AsyncSessionLocal  # noqa: E402
+from app.models.api_key import APIKey  # noqa: E402
+from app.models.task import Task  # noqa: E402
+from app.models.task_attempt import TaskAttempt  # noqa: E402
+from app.models.user import User  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 
 async def seed_database(task_count: int = 50) -> dict[str, int]:

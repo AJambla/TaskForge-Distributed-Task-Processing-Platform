@@ -8,7 +8,6 @@ from sqlalchemy.orm import selectinload
 
 from app.main import app
 from app.models.task import Task
-from app.models.task_attempt import TaskAttempt
 from app.models.worker_registration import WorkerRegistration
 from app.worker.main import consume_task
 

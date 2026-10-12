@@ -1,0 +1,392 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "title": "TaskForge — Reliability Benchmark & Stress Telemetry",
+  "tags": ["taskforge", "benchmark", "reliability", "backpressure"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Reliability Benchmark Invariant Ledger",
+      "type": "row"
+    },
+    {
+      "title": "Tasks Lost (Invariant)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "0",
+          "legendFormat": "Lost Tasks",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] },
+        "textMode": "auto"
+      }
+    },
+    {
+      "title": "Duplicate Executions",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "0",
+          "legendFormat": "Duplicates",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "green" },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Tasks Recovered from Dead Workers",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(tasks_recovered_total) or vector(0)",
+          "legendFormat": "Recovered",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Backpressure Shedding (429)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(backpressure_shed_total) or sum(http_requests_total{status=\"429\"}) or vector(0)",
+          "legendFormat": "429 Rejections",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "yellow" },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Dead Workers Detected",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(worker_failures_total) or vector(0)",
+          "legendFormat": "Worker Crashes",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "title": "Active Worker Pool",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "workers_online_total or count(worker_active_tasks) or vector(0)",
+          "legendFormat": "Online Workers",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "purple" },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Pillar 1: System Load & Throughput",
+      "type": "row"
+    },
+    {
+      "title": "Task Ingestion vs Processing Throughput",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"taskforge-api\", handler=~\"/api/v1/tasks.*\"}[1m]))",
+          "legendFormat": "Ingestion (tasks/sec)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(tasks_processed_total{outcome=\"success\"}[1m]))",
+          "legendFormat": "Completed (tasks/sec)",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Live Queue Depths & Priority Distribution",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rabbitmq_queue_messages{queue=~\"tasks.*\"}) by (queue)",
+          "legendFormat": "{{queue}} depth",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "Pillar 2: Latency Profiles (Gateway & Worker)",
+      "type": "row"
+    },
+    {
+      "title": "API Gateway Submission Latency (p50, p95, p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{handler=~\"/api/v1/tasks.*\"}[1m])) by (le))",
+          "legendFormat": "p50 Submission Latency",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=~\"/api/v1/tasks.*\"}[1m])) by (le))",
+          "legendFormat": "p95 Submission Latency",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{handler=~\"/api/v1/tasks.*\"}[1m])) by (le))",
+          "legendFormat": "p99 Submission Latency",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "Task Execution Duration (p50, p95, p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(task_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p50 Execution Duration",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(task_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95 Execution Duration",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(task_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p99 Execution Duration",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "title": "Pillar 3: Reliability, Retries & Worker Recovery",
+      "type": "row"
+    },
+    {
+      "title": "Task Retries & Recovery Dynamics",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(task_retries_total[1m]))",
+          "legendFormat": "Retries Published (retries/s)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(tasks_recovered_total[1m]))",
+          "legendFormat": "Tasks Recovered from Crashed Workers (recovered/s)",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(tasks_dlq_total[1m]))",
+          "legendFormat": "Tasks Moved to DLQ (dlq/s)",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "Task Outcome Breakdown (Success vs Failure)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(tasks_processed_total[1m])) by (outcome)",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 104,
+      "title": "Pillar 4: Backpressure, Overload Control & Concurrency",
+      "type": "row"
+    },
+    {
+      "title": "Adaptive Backpressure Shedding Rate (HTTP 429)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(backpressure_shed_total[1m])) or sum(rate(http_requests_total{status=\"429\"}[1m]))",
+          "legendFormat": "429 Rejections/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Worker Concurrency Utilization & Saturation",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "avg(worker_utilization_ratio) * 100",
+          "legendFormat": "Worker Utilization %",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(worker_active_tasks)",
+          "legendFormat": "Active Running Tasks",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(worker_concurrency_limit)",
+          "legendFormat": "Total Worker Concurrency Limit",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 105,
+      "title": "Pillar 5: Autonomous Recovery Efficacy",
+      "type": "row"
+    },
+    {
+      "title": "Recovery Success Rate (%)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 42 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "(sum(tasks_recovered_total) / (sum(tasks_recovered_total) + sum(tasks_dlq_total) + 0.0001)) * 100",
+          "legendFormat": "Recovery Success %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 90 },
+              { "color": "green", "value": 99 }
+            ]
+          },
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "title": "Worker Heartbeat Misses & Crash Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 42 },
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(worker_heartbeat_missed_total[1m]))",
+          "legendFormat": "Missed Heartbeats/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(worker_failures_total[1m]))",
+          "legendFormat": "Dead Worker Detections/s",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}
