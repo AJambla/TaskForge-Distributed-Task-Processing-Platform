@@ -6,6 +6,10 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.diagnostics import FailureDiagnostics
+from app.schemas.workers import TaskAttemptResponse
+
+
 
 class TaskType(str, Enum):
     EMAIL_SEND = "email_send"
@@ -134,14 +138,52 @@ class TaskResponse(BaseModel):
     result: dict[str, Any] | None = None
     trace_id: str | None = None
     trace_url: str | None = None
+    attempts: list[TaskAttemptResponse] = Field(default_factory=list)
+    diagnostics: FailureDiagnostics | None = None
 
     @classmethod
-    def from_task(cls, task: Any) -> "TaskResponse":
-        """Build TaskResponse from Task ORM model and interpolate trace_url if trace_id exists."""
+    def from_task(
+        cls,
+        task: Any,
+        include_attempts: bool = True,
+        include_diagnostics: bool = True,
+    ) -> "TaskResponse":
+        """Build TaskResponse from Task ORM model and interpolate trace_url, attempts, and diagnostics."""
         from app.config import get_settings
+        from app.schemas.diagnostics import synthesize_diagnostics
+
         settings = get_settings()
         t_id = getattr(task, "trace_id", None)
         t_url = settings.jaeger_ui_url.format(trace_id=t_id) if t_id else None
+
+        attempts_list: list[TaskAttemptResponse] = []
+        raw_attempts = None
+        if include_attempts:
+            try:
+                from sqlalchemy.orm import inspect as sa_inspect
+                insp = sa_inspect(task, raise_errors=False)
+                if insp is not None and hasattr(insp, "unloaded") and "attempts" in insp.unloaded:
+                    raw_attempts = None
+                else:
+                    raw_attempts = getattr(task, "attempts", None)
+            except Exception:
+                raw_attempts = getattr(task, "attempts", None)
+
+            if raw_attempts:
+                try:
+                    attempts_list = [
+                        TaskAttemptResponse.model_validate(a) for a in raw_attempts
+                    ]
+                except Exception:
+                    attempts_list = []
+
+        diagnostics = None
+        if include_diagnostics:
+            try:
+                diagnostics = synthesize_diagnostics(task, raw_attempts)
+            except Exception:
+                diagnostics = None
+
         data = {
             "id": task.id,
             "user_id": task.user_id,
@@ -159,10 +201,13 @@ class TaskResponse(BaseModel):
             "result": task.result,
             "trace_id": t_id,
             "trace_url": t_url,
+            "attempts": attempts_list,
+            "diagnostics": diagnostics,
         }
         return cls(**data)
 
     model_config = {"from_attributes": True}
+
 
 
 class PaginationInfo(BaseModel):
