@@ -75,14 +75,18 @@ class RabbitMQPublisher:
         task_type: str,
         priority: int = 0,
         traceparent: str | None = None,
+        routing_key: str | None = None,
+        route_by_priority: bool = False,
     ) -> None:
         """Publish a task message to the main exchange.
 
         Args:
             task_id: UUID string of the task to process.
-            task_type: routing key (e.g. 'email_send').
+            task_type: logical task type (e.g. 'email_send').
             priority: integer priority (clamped to 0-10 for AMQP priority queues).
             traceparent: optional W3C traceparent context string.
+            routing_key: explicit AMQP routing key override.
+            route_by_priority: if True, routes directly to tasks.{tier}.
         """
         if self._connection is None or self._connection.is_closed:
             await self.connect()
@@ -99,14 +103,26 @@ class RabbitMQPublisher:
             )
 
         from app.core.tracing import create_traceparent
+        from app.worker.priority import get_priority_tier
 
         tp = traceparent or create_traceparent()
         clamped_priority = max(0, min(10, int(priority)))
+        tier = get_priority_tier(clamped_priority)
+
+        if routing_key is not None:
+            resolved_routing_key = routing_key
+        elif route_by_priority:
+            resolved_routing_key = f"tasks.{tier}"
+        else:
+            resolved_routing_key = task_type
+
         body = task_id.encode("utf-8")
         headers = {
             "x-task-type": task_type,
             "x-task-id": task_id,
             "traceparent": tp,
+            "x-priority": clamped_priority,
+            "x-priority-tier": tier,
         }
         message = Message(
             body,
@@ -115,13 +131,14 @@ class RabbitMQPublisher:
             priority=clamped_priority,
             headers=headers,
         )
-        await self._exchange.publish(message, routing_key=task_type)
+        await self._exchange.publish(message, routing_key=resolved_routing_key)
         logger.info(
-            "Published task %s to exchange '%s' with routing key '%s' (priority=%d, traceparent=%s).",
+            "Published task %s to exchange '%s' with routing key '%s' (priority=%d, tier=%s, traceparent=%s).",
             task_id,
             EXCHANGE_NAME,
-            task_type,
+            resolved_routing_key,
             clamped_priority,
+            tier,
             tp,
         )
 
@@ -151,10 +168,20 @@ async def publish_task(
     task_type: str,
     priority: int = 0,
     traceparent: str | None = None,
+    routing_key: str | None = None,
+    route_by_priority: bool = False,
 ) -> None:
     """Convenience function to publish a task message."""
     publisher = await get_publisher()
-    await publisher.publish(task_id, task_type, priority=priority, traceparent=traceparent)
+    await publisher.publish(
+        task_id,
+        task_type,
+        priority=priority,
+        traceparent=traceparent,
+        routing_key=routing_key,
+        route_by_priority=route_by_priority,
+    )
+
 
 
 async def purge_queue(queue_name: str) -> int:

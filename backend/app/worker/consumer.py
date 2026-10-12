@@ -7,13 +7,43 @@ from typing import Any
 
 
 from app.config import get_settings
+from app.worker.priority import PRIORITY_TIERS
 from app.worker.retry import RETRY_BUCKETS
+
 
 logger = logging.getLogger("worker.consumer")
 
 EXCHANGE_NAME = "task_main_exchange"
 TASK_TYPES = ["email_send", "webhook_delivery"]
 _inflight_tasks: set[asyncio.Task] = set()
+
+
+async def declare_priority_queues(
+    channel,
+    exchange,
+    task_types: list[str] | None = None,
+) -> dict[str, Any]:
+    """Declare tasks.high, tasks.normal, tasks.low queues and bind routing keys."""
+    queues = {}
+    for tier in PRIORITY_TIERS:
+        pq_name = f"tasks.{tier}"
+        pq = await channel.declare_queue(
+            pq_name,
+            durable=True,
+            arguments={
+                "x-dead-letter-exchange": EXCHANGE_NAME,
+                "x-dead-letter-routing-key": f"tasks.{tier}.dlq",
+                "x-max-priority": 10,
+            },
+        )
+        await pq.bind(exchange, routing_key=pq_name)
+        await pq.bind(exchange, routing_key=tier)
+        if task_types:
+            for tt in task_types:
+                await pq.bind(exchange, routing_key=f"{tt}.{tier}")
+        queues[tier] = pq
+    return queues
+
 
 
 async def subscribe_queues(
@@ -23,7 +53,9 @@ async def subscribe_queues(
     shutdown_event=None,
     task_types: list[str] | None = None,
     concurrency_limit: int | None = None,
+    include_priority_queues: bool = False,
 ) -> list[tuple[Any, str]]:
+
     """Declare main queues, retry buckets, DLQs, and subscribe consumers."""
     settings = get_settings()
     concurrency = concurrency_limit or settings.worker_concurrency
@@ -114,4 +146,13 @@ async def subscribe_queues(
         await dlq_queue.bind(exchange, routing_key=f"tasks.{task_type}.dlq")
         logger.info("Declared DLQ '%s' (messages are terminal).", dlq_queue_name)
 
+    if include_priority_queues:
+        priority_queues = await declare_priority_queues(channel, exchange, task_types=types)
+        for tier, pq in priority_queues.items():
+            tag = await pq.consume(_make_handler(publisher))
+            if tag:
+                consumers.append((pq, tag))
+            logger.info("Subscribed to priority queue 'tasks.%s'.", tier)
+
     return consumers
+
