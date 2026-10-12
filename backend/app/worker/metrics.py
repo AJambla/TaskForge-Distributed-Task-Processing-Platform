@@ -46,6 +46,24 @@ workers_online_total = Gauge(
     registry=REGISTRY,
 )
 
+worker_active_tasks = Gauge(
+    "worker_active_tasks",
+    "Number of tasks currently being processed by this worker",
+    registry=REGISTRY,
+)
+
+worker_concurrency_limit = Gauge(
+    "worker_concurrency_limit",
+    "Maximum concurrency limit configured for this worker",
+    registry=REGISTRY,
+)
+
+worker_utilization_ratio = Gauge(
+    "worker_utilization_ratio",
+    "Ratio of active tasks to worker concurrency limit (0.0 to 1.0)",
+    registry=REGISTRY,
+)
+
 
 class _MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:

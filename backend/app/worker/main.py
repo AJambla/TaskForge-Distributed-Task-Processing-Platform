@@ -55,7 +55,10 @@ from app.worker.metrics import (
     task_attempts_total,
     task_duration_seconds,
     tasks_processed_total,
+    worker_active_tasks,
+    worker_utilization_ratio,
 )
+
 from app.worker.retry import (
     calculate_retry_delay as _calculate_retry_delay,
     publish_retry as _publish_retry,
@@ -151,7 +154,12 @@ async def consume_task(
 
     global _active_task_count
     _active_task_count += 1
+    worker_active_tasks.set(_active_task_count)
+    worker_utilization_ratio.set(
+        round(_active_task_count / max(1, _SETTINGS.worker_concurrency), 4)
+    )
     try:
+
         with tracer.start_as_current_span("task.execute", context=extracted_ctx) as span:
             span.set_attribute("task.id", str(task_id))
             span.set_attribute("task.type", str(task_type))
@@ -260,6 +268,11 @@ async def consume_task(
                 return "failed", task.attempt_count, max_attempts, None
     finally:
         _active_task_count -= 1
+        worker_active_tasks.set(_active_task_count)
+        worker_utilization_ratio.set(
+            round(_active_task_count / max(1, _SETTINGS.worker_concurrency), 4)
+        )
+
 
 
 async def on_message(message: aio_pika.Message, publisher, worker_id=None) -> None:
@@ -328,12 +341,22 @@ async def _heartbeat_loop(worker: WorkerRegistration) -> None:
         await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
         try:
             async with AsyncSessionLocal() as db:
-                await _update_heartbeat(db, worker, active_count=_active_task_count)
+                await _update_heartbeat(
+                    db,
+                    worker,
+                    active_count=_active_task_count,
+                    concurrency_limit=_SETTINGS.worker_concurrency,
+                )
         except Exception:
             logger.exception("Heartbeat update failed for worker %s", worker.id)
 
 
-async def subscribe_queues(publisher, worker_id=None, shutdown_event=None) -> list[tuple[Any, str]]:
+async def subscribe_queues(
+    publisher,
+    worker_id=None,
+    shutdown_event=None,
+    concurrency_limit: int | None = None,
+) -> list[tuple[Any, str]]:
     """Backward-compatible helper redirecting to consumer.subscribe_queues."""
     return await _consumer_subscribe_queues(
         publisher=publisher,
@@ -341,7 +364,9 @@ async def subscribe_queues(publisher, worker_id=None, shutdown_event=None) -> li
         worker_id=worker_id,
         shutdown_event=shutdown_event,
         task_types=TASK_TYPES,
+        concurrency_limit=concurrency_limit,
     )
+
 
 
 async def main() -> None:
