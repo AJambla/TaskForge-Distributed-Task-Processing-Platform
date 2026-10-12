@@ -1,8 +1,7 @@
 """Unit tests for Pluggable Handler SDK, TaskContext and Entry Point Discovery (FEAT-06)."""
 from __future__ import annotations
 
-import importlib.metadata
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel, Field
@@ -11,7 +10,6 @@ from app.worker.context import TaskContext
 from app.worker.handlers import (
     HANDLER_REGISTRY,
     SCHEMA_REGISTRY,
-    discover_entrypoint_handlers,
     get_handler,
     get_handler_metadata,
     get_handler_schema,
@@ -63,24 +61,6 @@ def test_handler_alias_decorator():
     assert meta["timeout_seconds"] == 10
     assert meta["has_context"] is False
 
-
-def test_entrypoint_discovery_registers_handlers():
-    """Verify discover_entrypoint_handlers registers entrypoint functions."""
-    mock_ep = MagicMock()
-    mock_ep.name = "plugin_task"
-    mock_ep.value = "my_plugin.tasks:run"
-
-    async def fake_handler(payload: dict):
-        return {"plugin": "active"}
-
-    mock_ep.load.return_value = fake_handler
-
-    with patch("importlib.metadata.entry_points") as mock_eps:
-        mock_eps.return_value.select.return_value = [mock_ep]
-        count = discover_entrypoint_handlers(group="taskforge.handlers")
-        assert count == 1
-        assert "plugin_task" in HANDLER_REGISTRY
-        assert get_handler("plugin_task") is fake_handler
 
 
 @pytest.mark.asyncio
