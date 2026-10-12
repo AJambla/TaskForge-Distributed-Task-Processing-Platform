@@ -1,6 +1,6 @@
 """Unit tests for task result persistence (IMP-02)."""
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from datetime import datetime, timezone
 import uuid
 

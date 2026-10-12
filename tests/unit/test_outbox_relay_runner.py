@@ -1,6 +1,5 @@
 """Unit tests for Outbox Relay Runner Service (FEAT-02)."""
 import uuid
-import asyncio
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch

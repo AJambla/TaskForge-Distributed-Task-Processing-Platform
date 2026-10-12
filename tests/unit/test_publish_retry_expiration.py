@@ -1,7 +1,6 @@
 """Retry messages must carry an expiration aio_pika can encode (not a str)."""
 from __future__ import annotations
 
-from datetime import timedelta
 from unittest.mock import AsyncMock
 
 import pytest

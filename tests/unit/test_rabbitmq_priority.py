@@ -1,8 +1,8 @@
 """Unit tests for RabbitMQ queue priority (IMP-03)."""
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
-from app.core.rabbitmq import RabbitMQPublisher, publish_task
+from app.core.rabbitmq import RabbitMQPublisher
 
 
 @pytest.mark.asyncio

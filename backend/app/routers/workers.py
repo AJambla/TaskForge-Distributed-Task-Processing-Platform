@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings

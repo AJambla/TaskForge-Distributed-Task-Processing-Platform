@@ -9,12 +9,10 @@ from pydantic import BaseModel, Field
 from app.worker.context import TaskContext
 from app.worker.handlers import (
     HANDLER_REGISTRY,
-    SCHEMA_REGISTRY,
     get_handler,
     get_handler_metadata,
     get_handler_schema,
     handler,
-    list_handlers,
     register_handler,
 )
 

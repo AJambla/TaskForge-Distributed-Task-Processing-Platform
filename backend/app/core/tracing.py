@@ -15,7 +15,7 @@ import secrets
 from typing import Mapping
 
 from opentelemetry import trace
-from opentelemetry.trace import Span, Tracer
+from opentelemetry.trace import Tracer
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 logger = logging.getLogger(__name__)

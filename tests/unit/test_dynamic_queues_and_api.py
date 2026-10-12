@@ -1,6 +1,6 @@
 """Unit tests for dynamic queue provisioning and API custom task handling (FEAT-06 Task 3)."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from pydantic import BaseModel, Field
 
 from app.schemas.tasks import TaskCreateRequest
@@ -33,7 +33,7 @@ async def test_dynamic_queue_provisioning():
 
     mock_callback = AsyncMock()
 
-    consumers = await subscribe_queues(mock_publisher, mock_callback)
+    await subscribe_queues(mock_publisher, mock_callback)
 
     declared_queues = [
         call.args[0] for call in mock_channel.declare_queue.call_args_list

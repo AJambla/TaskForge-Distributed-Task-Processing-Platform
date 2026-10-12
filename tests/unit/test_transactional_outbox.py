@@ -40,7 +40,7 @@ async def test_create_task_writes_task_and_outbox():
          patch("app.routers.tasks.publish_task", new_callable=AsyncMock) as mock_pub, \
          patch("app.routers.tasks.set_idempotency_task_id", new_callable=AsyncMock):
 
-        response = await create_task(
+        await create_task(
             body=body,
             current_user=user,
             db=mock_db,

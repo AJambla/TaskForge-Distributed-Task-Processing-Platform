@@ -9,10 +9,12 @@ Per API.md:
 """
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -74,7 +76,6 @@ async def create_task(
 
     from app.core.tracing import (
         create_traceparent,
-        extract_context_from_carrier,
         get_current_trace_id,
         inject_carrier,
         parse_traceparent,
@@ -314,7 +315,6 @@ async def list_tasks(
     all_tasks: bool = Query(False, description="Admin-only: include all users' tasks."),
 ) -> TaskListResponse:
     """List tasks with pagination, filtering, and sorting."""
-    import base64
     import json
 
     from fastapi.params import Query as QueryParam
@@ -415,7 +415,7 @@ async def list_tasks(
     if len(tasks) == page_size:
         last_task = tasks[-1]
         raw_cursor = json.dumps({
-            "created_at": last_task.created_at.isoformat() if last_task.created_at else now.isoformat(),
+            "created_at": last_task.created_at.isoformat() if last_task.created_at else datetime.now(timezone.utc).isoformat(),
             "id": str(last_task.id),
         })
         next_cursor = base64.urlsafe_b64encode(raw_cursor.encode("utf-8")).decode("utf-8")

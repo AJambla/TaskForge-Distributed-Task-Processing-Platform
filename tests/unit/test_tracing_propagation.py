@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.core.tracing import (
-    create_traceparent,
     extract_trace_context,
     generate_span_id,
     generate_trace_id,

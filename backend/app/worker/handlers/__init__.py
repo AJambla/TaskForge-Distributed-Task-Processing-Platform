@@ -8,7 +8,6 @@ Supports:
 """
 from __future__ import annotations
 
-import functools
 import inspect
 import logging
 from typing import Any, Callable, Type
@@ -104,8 +103,8 @@ def list_handlers() -> dict[str, dict[str, Any]]:
 
 
 # Register built-in handlers
-from app.worker.handlers.email import handle_email_send
-from app.worker.handlers.webhook import handle_webhook_delivery
+from app.worker.handlers.email import handle_email_send  # noqa: E402
+from app.worker.handlers.webhook import handle_webhook_delivery  # noqa: E402
 
 register_handler("email_send", timeout_seconds=30, description="Send outbound email")(handle_email_send)
 register_handler("webhook_delivery", timeout_seconds=30, description="Deliver webhook payload with HMAC")(handle_webhook_delivery)

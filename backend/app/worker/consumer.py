@@ -5,7 +5,6 @@ import asyncio
 import logging
 from typing import Any
 
-import aio_pika
 
 from app.worker.retry import RETRY_BUCKETS
 
@@ -18,7 +17,7 @@ _inflight_tasks: set[asyncio.Task] = set()
 
 async def subscribe_queues(
     publisher,
-    on_message_callback,
+    on_message_callback=None,
     worker_id=None,
     shutdown_event=None,
     task_types: list[str] | None = None,

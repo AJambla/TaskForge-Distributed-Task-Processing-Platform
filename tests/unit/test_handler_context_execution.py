@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from app.worker.context import TaskContext
-from app.worker.handlers import register_handler, HANDLER_REGISTRY, HANDLER_METADATA
+from app.worker.handlers import register_handler
 from app.worker.main import consume_task
 
 

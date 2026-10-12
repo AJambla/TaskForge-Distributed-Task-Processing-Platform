@@ -1,7 +1,6 @@
 """Worker lifecycle management: registration, heartbeats, status updates, and draining (IMP-21)."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -9,7 +8,7 @@ import socket
 import traceback
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings

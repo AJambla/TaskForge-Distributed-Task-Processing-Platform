@@ -4,10 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import uuid
 import json
 
-from app.core.deps import _auth_via_jwt, _auth_via_api_key
-from app.core.security import create_access_token, hash_api_key
+from app.core.deps import _auth_via_jwt
+from app.core.security import create_access_token
 from app.models.user import User
-from app.models.api_key import APIKey
 
 
 @pytest.mark.asyncio

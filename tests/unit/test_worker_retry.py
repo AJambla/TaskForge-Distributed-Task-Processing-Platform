@@ -6,7 +6,6 @@ causing an endless re-delivery loop.
 """
 from __future__ import annotations
 
-from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

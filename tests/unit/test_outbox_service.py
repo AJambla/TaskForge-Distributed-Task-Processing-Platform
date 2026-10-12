@@ -1,18 +1,15 @@
 """Unit tests for Outbox database service, exponential backoff, and pruning (FEAT-02)."""
 import uuid
 import pytest
-from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 from app.models.task_outbox import TaskOutbox
 from app.outbox.service import (
     create_outbox_event,
-    claim_pending_events,
     mark_published,
     mark_failed,
     calculate_backoff_seconds,
 )
-from app.outbox.cleanup import prune_published_outbox
 
 
 def test_calculate_backoff_exponential():

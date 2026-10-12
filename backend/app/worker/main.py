@@ -12,7 +12,6 @@ import asyncio
 import logging
 import os
 import signal
-import socket
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,10 +31,8 @@ from app.core.rabbitmq import close_publisher, get_publisher
 from app.core.redis import close_redis
 from app.database import AsyncSessionLocal, engine
 from app.models.task import Task
-from app.models.task_attempt import TaskAttempt
 from app.models.worker_registration import WorkerRegistration
 from app.worker.consumer import (
-    EXCHANGE_NAME,
     TASK_TYPES,
     _inflight_tasks,
     subscribe_queues as _consumer_subscribe_queues,
@@ -52,17 +49,14 @@ from app.worker.lifecycle import (
     register_worker as _register_worker,
     set_worker_offline as _set_worker_offline,
     update_heartbeat as _update_heartbeat,
-    update_worker_stats as _update_worker_stats,
 )
 from app.worker.metrics import (
     start_metrics_server,
     task_attempts_total,
     task_duration_seconds,
     tasks_processed_total,
-    workers_online_total,
 )
 from app.worker.retry import (
-    RETRY_BUCKETS,
     calculate_retry_delay as _calculate_retry_delay,
     publish_retry as _publish_retry,
 )
