@@ -57,4 +57,10 @@ load-tests/results/
 ui-ux-pro-max-skill/
 IMPROVEMENTS.md
 data/
-Docs/
+# Private planning & source-of-truth files
+Docs/TaskForge_Change.md
+Docs/TaskForge_Differentiator.md
+Docs/TaskForge_Future.md
+Docs/TaskForge_Project_Scope.md
+Docs/TASKFORGE_RESTRUCTURING_PLAN.md
+Docs/superpowers/
