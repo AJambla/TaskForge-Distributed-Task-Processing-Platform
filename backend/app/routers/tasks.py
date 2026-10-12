@@ -528,7 +528,12 @@ async def cancel_task(
                 }
             },
         )
-    if task.status not in (TaskStatus.QUEUED.value, TaskStatus.RETRYING.value):
+    cancellable_states = (
+        TaskStatus.QUEUED.value,
+        TaskStatus.RETRYING.value,
+        TaskStatus.RUNNING.value,
+    )
+    if task.status not in cancellable_states:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -539,6 +544,16 @@ async def cancel_task(
                 }
             },
         )
+    if task.status == TaskStatus.RUNNING.value:
+        try:
+            from app.core.redis import get_redis
+            redis_client = await get_redis()
+            await redis_client.set(f"task:cancelled:{task.id}", "1", ex=3600)
+        except Exception as redis_err:
+            logger.warning(
+                "Failed to set Redis cancellation flag for task %s: %s", task.id, redis_err
+            )
+
     task.status = TaskStatus.CANCELLED.value
     task.completed_at = datetime.now(timezone.utc)
     await db.commit()

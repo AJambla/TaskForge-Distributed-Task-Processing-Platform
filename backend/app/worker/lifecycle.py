@@ -68,6 +68,13 @@ async def mark_success(
     result=None,
 ) -> None:
     """Transition task and attempt to succeeded state and publish SSE event."""
+    if task.status == "cancelled":
+        attempt.outcome = "failure"
+        attempt.finished_at = datetime.now(timezone.utc)
+        attempt.error_message = "Task execution aborted due to cancellation"
+        await db.commit()
+        return
+
     task.status = "succeeded"
     task.completed_at = datetime.now(timezone.utc)
     if isinstance(result, dict):

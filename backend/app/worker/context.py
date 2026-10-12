@@ -49,3 +49,15 @@ class TaskContext:
             logger.debug(
                 "Failed to publish progress for task %s: %s", self.task_id, exc
             )
+
+    async def is_cancelled(self) -> bool:
+        """Check if cancellation has been requested for this running task."""
+        try:
+            redis_client = await get_redis()
+            val = await redis_client.exists(f"task:cancelled:{self.task_id}")
+            return val == 1 or val is True
+        except Exception as exc:
+            logger.debug(
+                "Failed to check cancellation flag for task %s: %s", self.task_id, exc
+            )
+            return False

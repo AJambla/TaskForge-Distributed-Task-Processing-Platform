@@ -175,6 +175,16 @@ async def consume_task(
                 meta = get_handler_metadata(task_type)
                 pass_ctx = meta.get("has_context", False) if meta else False
 
+                if await ctx.is_cancelled():
+                    logger.info("[trace=%s] Task %s was cancelled prior to handler execution.", resolved_trace_id, task_id)
+                    task.status = "cancelled"
+                    task.completed_at = datetime.now(timezone.utc)
+                    attempt.outcome = "failure"
+                    attempt.finished_at = task.completed_at
+                    attempt.error_message = "Task execution aborted due to cancellation"
+                    await db.commit()
+                    return "cancelled", task.attempt_count, max_attempts, None
+
                 start = asyncio.get_event_loop().time()
                 if sys.platform != "win32" and _SETTINGS.sandbox_enabled:
                     result = await asyncio.wait_for(
@@ -187,6 +197,17 @@ async def consume_task(
                     handler_coro = handler(task.payload, ctx) if pass_ctx else handler(task.payload)
                     result = await asyncio.wait_for(handler_coro, timeout=timeout)
                 elapsed = asyncio.get_event_loop().time() - start
+
+                if await ctx.is_cancelled():
+                    logger.info("[trace=%s] Task %s was cancelled during execution.", resolved_trace_id, task_id)
+                    task.status = "cancelled"
+                    task.completed_at = datetime.now(timezone.utc)
+                    attempt.outcome = "failure"
+                    attempt.finished_at = task.completed_at
+                    attempt.error_message = "Task execution aborted due to cancellation"
+                    await db.commit()
+                    return "cancelled", task.attempt_count, max_attempts, None
+
                 span.set_attribute("execution_latency_ms", float(elapsed * 1000.0))
                 span.set_attribute("task.status", "succeeded")
                 span.set_status(Status(StatusCode.OK))
