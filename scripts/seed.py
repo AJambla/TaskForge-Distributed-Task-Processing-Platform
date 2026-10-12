@@ -68,7 +68,7 @@ async def seed_database(task_count: int = 50) -> dict[str, int]:
         statuses = ["queued", "running", "succeeded", "failed", "dead_letter"]
         task_types = [
             ("email_send", {"to": "customer@example.com", "subject": "Welcome to TaskForge", "body": "Hello!"}),
-            ("image_resize", {"source_url": "https://images.example.com/sample.png", "width": 800, "height": 600}),
+            ("email_send", {"to": "alerts@taskforge.dev", "subject": "Daily Execution Digest", "body": "System status OK"}),
             ("webhook_delivery", {"url": "https://httpbin.org/post", "headers": {"X-Source": "Seed"}, "body": {"event": "ping"}}),
         ]
 
