@@ -199,3 +199,24 @@ def test_task_response_serializes_timeline_and_diagnostics():
     assert "attempts" in dumped
     assert "diagnostics" in dumped
     assert dumped["diagnostics"]["classification"] == "RATE_LIMITED"
+
+
+def test_task_response_from_orm_task_unloaded_attempts():
+    """Verify TaskResponse.from_task safely handles real SQLAlchemy Task with unloaded attempts."""
+    from app.models.task import Task
+
+    orm_task = Task(
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        task_type="email_send",
+        status="pending",
+        priority=5,
+        max_attempts=3,
+        attempt_count=0,
+        created_at=datetime.now(timezone.utc),
+    )
+    resp = TaskResponse.from_task(orm_task)
+    assert resp.id == orm_task.id
+    assert resp.attempts == []
+    assert resp.diagnostics is None
+

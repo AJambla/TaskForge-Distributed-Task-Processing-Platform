@@ -104,6 +104,44 @@ def classify_failure(
     return FailureClassification.FATAL_ERROR
 
 
+def resolve_task_attempts(task: Any, attempts: list[Any] | None = None) -> list[Any]:
+    """Safely retrieve attempts without triggering SQLAlchemy async lazy-load."""
+    if attempts is not None:
+        return attempts
+
+    task_dict = getattr(task, "__dict__", {})
+    if "attempts" in task_dict and task_dict["attempts"] is not None:
+        val = task_dict["attempts"]
+        return list(val) if hasattr(val, "__iter__") else []
+
+    try:
+        from sqlalchemy import inspect as sa_inspect
+
+        insp = sa_inspect(task, raise_errors=False)
+        if insp is not None:
+            if hasattr(insp, "unloaded") and "attempts" in insp.unloaded:
+                return []
+            if (
+                hasattr(insp, "attrs")
+                and "attempts" in insp.attrs
+                and insp.attrs.attempts.loaded_value is not insp.attrs.attempts.NO_VALUE
+            ):
+                val = insp.attrs.attempts.loaded_value
+                return list(val) if val else []
+            return []
+    except Exception:
+        pass
+
+    try:
+        val = getattr(task, "attempts", None)
+        if val is not None and hasattr(val, "__iter__"):
+            return list(val)
+    except Exception:
+        pass
+
+    return []
+
+
 def synthesize_diagnostics(
     task: Any,
     attempts: list[Any] | None = None,
@@ -114,7 +152,7 @@ def synthesize_diagnostics(
     """
     # If task succeeded with no failed attempts, diagnostics are not applicable
     status = getattr(task, "status", None)
-    task_attempts = attempts if attempts is not None else getattr(task, "attempts", [])
+    task_attempts = resolve_task_attempts(task, attempts)
 
     failed_attempts = [
         a for a in task_attempts if getattr(a, "outcome", None) in ("failure", "timeout") or getattr(a, "error_message", None)
