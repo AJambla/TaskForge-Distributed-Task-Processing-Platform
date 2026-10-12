@@ -37,7 +37,7 @@ const PAGES: Array<{ label: string; to: string; icon: React.ReactNode; admin?: b
   { label: "Tasks", to: "/app/tasks", icon: <ListChecks size={15} /> },
   { label: "Queues", to: "/app/queues", icon: <Layers size={15} /> },
   { label: "Workers", to: "/app/workers", icon: <Server size={15} /> },
-  { label: "Metrics", to: "/app/metrics", icon: <BarChart3 size={15} />, admin: true },
+  { label: "Metrics", to: "/app/metrics", icon: <BarChart3 size={15} /> },
   { label: "Activity", to: "/app/activity", icon: <Activity size={15} /> },
   { label: "Settings", to: "/app/settings", icon: <Settings size={15} /> },
 ];
