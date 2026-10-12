@@ -2,7 +2,7 @@
 
 Per DATABASE.md:
 - Exchange: `task_main_exchange` (direct)
-- Routing key: task_type (e.g. `email_send`, `image_resize`, `webhook_delivery`)
+- Routing key: task_type (e.g. `email_send`, `webhook_delivery`)
 - Message body: only the task_id (worker fetches payload from Postgres)
 - Queues are declared lazily on first publish; workers bind the same queues.
 """
