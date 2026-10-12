@@ -81,14 +81,6 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "noreply@taskforge.dev"
 
-    # Storage (FEAT-01)
-    storage_backend: Literal["local", "s3"] = "local"
-    storage_local_dir: str = "data/storage"
-    s3_bucket_name: str = "taskforge-artifacts"
-    s3_endpoint_url: str | None = None
-    s3_region: str = "us-east-1"
-    s3_access_key_id: str | None = None
-    s3_secret_access_key: str | None = None
 
     # Outbox Relay (FEAT-02)
     outbox_relay_enabled: bool = False
