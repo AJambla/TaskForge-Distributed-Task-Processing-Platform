@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.task_outbox import TaskOutbox

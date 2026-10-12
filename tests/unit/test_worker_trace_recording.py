@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tracing import init_tracer
 from app.models.task import Task
-from app.models.task_attempt import TaskAttempt
 from app.worker.lifecycle import create_attempt
 from app.worker.main import consume_task
 

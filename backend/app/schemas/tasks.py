@@ -188,3 +188,10 @@ class TaskBulkResponse(BaseModel):
     tasks: list[TaskResponse]
 
 
+class TaskResultResponse(BaseModel):
+    task_id: uuid.UUID
+    status: str
+    result: dict[str, Any] | None = None
+
+
+

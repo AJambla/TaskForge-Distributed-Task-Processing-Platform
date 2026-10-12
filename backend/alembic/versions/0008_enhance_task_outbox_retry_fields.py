@@ -1,15 +1,14 @@
 """Alembic migration: Enhance task_outbox with retry and backoff fields (FEAT-02).
 
 Revision ID: 0008_enhance_task_outbox_retry_fields
-Revises: 0007_add_artifacts_table
+Revises: 0005_add_organizations_and_memberships
 Create Date: 2026-10-11
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision = "0008_enhance_task_outbox_retry_fields"
-down_revision = "0007_add_artifacts_table"
+down_revision = "0005_add_organizations_and_memberships"
 branch_labels = None
 depends_on = None
 

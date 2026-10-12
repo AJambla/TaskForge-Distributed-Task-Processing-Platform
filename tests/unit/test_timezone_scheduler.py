@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
-import pytest
 from app.scheduler.main import _next_occurrence
 
 

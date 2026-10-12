@@ -1,16 +1,10 @@
 """Unit tests for OpenTelemetry tracing foundation and context propagation (FEAT-03)."""
 from __future__ import annotations
 
-import pytest
-from opentelemetry import trace
-from opentelemetry.trace import Status, StatusCode
 
 from app.core.tracing import (
     create_traceparent,
     extract_context_from_carrier,
-    extract_trace_context,
-    generate_span_id,
-    generate_trace_id,
     get_current_span_id,
     get_current_trace_id,
     init_tracer,
@@ -24,7 +18,7 @@ def test_init_tracer_and_span_creation():
     tracer = init_tracer("taskforge-test")
     assert tracer is not None
 
-    with tracer.start_as_current_span("test-operation") as span:
+    with tracer.start_as_current_span("test-operation"):
         trace_id = get_current_trace_id()
         span_id = get_current_span_id()
         assert trace_id is not None

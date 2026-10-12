@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import uuid
-import pytest
 from app.models.organization import Organization, OrganizationMembership
 from app.models.task import Task
 from app.models.user import User

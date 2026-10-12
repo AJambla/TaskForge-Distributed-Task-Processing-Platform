@@ -3,13 +3,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from app.core.tracing import init_tracer
-from app.main import app
 from app.models.task import Task
 from app.schemas.tasks import TaskResponse
 

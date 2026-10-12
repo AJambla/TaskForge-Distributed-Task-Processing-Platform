@@ -1,11 +1,11 @@
 """Unit tests for discrete bucketed retry queues (IMP-09)."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from app.worker.main import (
-    _calculate_retry_delay,
-    _publish_retry,
-    subscribe_queues,
+from app.worker.consumer import subscribe_queues
+from app.worker.retry import (
     RETRY_BUCKETS,
+    calculate_retry_delay as _calculate_retry_delay,
+    publish_retry as _publish_retry,
 )
 
 

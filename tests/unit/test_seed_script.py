@@ -1,7 +1,6 @@
 """Unit test for synthetic dev database seeder (IMP-11)."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import uuid
 from scripts.seed import seed_database
 
 

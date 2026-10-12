@@ -4,7 +4,6 @@ from __future__ import annotations
 import pytest
 from app.worker.executor import get_timeout
 from app.worker.handlers import (
-    HANDLER_REGISTRY,
     get_handler,
     get_handler_metadata,
     list_handlers,

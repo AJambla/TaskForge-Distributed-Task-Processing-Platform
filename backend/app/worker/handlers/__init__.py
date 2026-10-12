@@ -8,8 +8,6 @@ Supports:
 """
 from __future__ import annotations
 
-import functools
-import importlib.metadata
 import inspect
 import logging
 from typing import Any, Callable, Type
@@ -104,38 +102,10 @@ def list_handlers() -> dict[str, dict[str, Any]]:
     return dict(HANDLER_METADATA)
 
 
-def discover_entrypoint_handlers(group: str = "taskforge.handlers") -> int:
-    """Discover and register handlers via Python entry points.
-
-    Packages declaring entry points in pyproject.toml under [project.entry-points."taskforge.handlers"]
-    will be loaded automatically.
-    """
-    discovered_count = 0
-    try:
-        eps = importlib.metadata.entry_points()
-        selected_eps = eps.select(group=group) if hasattr(eps, "select") else eps.get(group, [])
-        for ep in selected_eps:
-            try:
-                loaded = ep.load()
-                # If loaded object is a function and not yet in registry, register with ep.name
-                if callable(loaded) and ep.name not in HANDLER_REGISTRY:
-                    register_handler(ep.name)(loaded)
-                discovered_count += 1
-                logger.info("Discovered entry point handler '%s' from %s", ep.name, ep.value)
-            except Exception as load_err:
-                logger.warning("Failed to load handler entry point %s: %s", ep.name, load_err)
-    except Exception as exc:
-        logger.debug("Entry point discovery error: %s", exc)
-
-    return discovered_count
-
-
 # Register built-in handlers
-from app.worker.handlers.email import handle_email_send
-from app.worker.handlers.webhook import handle_webhook_delivery
+from app.worker.handlers.email import handle_email_send  # noqa: E402
+from app.worker.handlers.webhook import handle_webhook_delivery  # noqa: E402
 
 register_handler("email_send", timeout_seconds=30, description="Send outbound email")(handle_email_send)
 register_handler("webhook_delivery", timeout_seconds=30, description="Deliver webhook payload with HMAC")(handle_webhook_delivery)
 
-# Scan entry points
-discover_entrypoint_handlers()

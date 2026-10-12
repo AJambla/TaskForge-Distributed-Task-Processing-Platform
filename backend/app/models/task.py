@@ -52,9 +52,6 @@ class Task(Base):
     )
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
-    artifacts = relationship(
-        "Artifact", back_populates="task", cascade="all, delete-orphan", lazy="selectin"
-    )
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("schedules.id", ondelete="SET NULL"),
