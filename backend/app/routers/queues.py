@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter
 from sqlalchemy import extract, func, select
 
-from app.core.deps import CurrentUser, DBSession
+from app.core.deps import AdminUser, CurrentUser, DBSession
 from app.core.rabbitmq import get_queue_depths, publish_task, purge_queue
 from app.models.task import Task
 
@@ -167,7 +167,7 @@ async def inspect_dlq(
     summary="Redrive dead-letter tasks back to main queue",
 )
 async def redrive_dlq(
-    current_user: CurrentUser,
+    current_user: AdminUser,
     db: DBSession,
     task_type: str | None = None,
     limit: int = 100,
