@@ -3,17 +3,32 @@ import os
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import Column, MetaData, PrimaryKeyConstraint, String, Table, pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from alembic.ddl.impl import DefaultImpl
+
+# Allow migration names longer than standard 32 chars
+def _custom_version_table_impl(self, *, version_table: str, version_table_schema: str | None, version_table_pk: bool, **kw) -> Table:
+    vt = Table(
+        version_table,
+        MetaData(),
+        Column("version_num", String(128), nullable=False),
+        schema=version_table_schema,
+    )
+    if version_table_pk:
+        vt.append_constraint(PrimaryKeyConstraint("version_num", name=f"{version_table}_pkc"))
+    return vt
+
+DefaultImpl.version_table_impl = _custom_version_table_impl
 
 # Add the app directory to sys.path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from app.config import get_settings
-from app.models import Base
+from app.config import get_settings  # noqa: E402
+from app.models import Base  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -63,6 +78,10 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    # Ensure alembic_version has sufficient column width for descriptive revisions
+    connection.execute(
+        text("ALTER TABLE IF EXISTS alembic_version ALTER COLUMN version_num TYPE VARCHAR(128);")
+    )
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
@@ -83,6 +102,7 @@ async def run_async_migrations() -> None:
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+        await connection.commit()
 
     await connectable.dispose()
 
