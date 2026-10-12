@@ -10,7 +10,6 @@ from app.models.task_attempt import TaskAttempt
 from app.models.task_outbox import TaskOutbox
 from app.models.user import User
 from app.models.worker_registration import WorkerRegistration
-from app.models.workflow import Workflow, WorkflowStep
 
 __all__ = [
     "APIKey",
@@ -25,6 +24,4 @@ __all__ = [
     "TaskOutbox",
     "User",
     "WorkerRegistration",
-    "Workflow",
-    "WorkflowStep",
 ]

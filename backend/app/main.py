@@ -14,7 +14,7 @@ from app.core.logging import configure_logging
 from app.core.rabbitmq import get_publisher
 from app.core.redis import get_redis
 from app.database import engine
-from app.routers import api_keys, auth, queues, storage, tasks, workers, workflows
+from app.routers import api_keys, auth, queues, storage, tasks, workers
 
 settings = get_settings()
 configure_logging(
@@ -137,7 +137,6 @@ async def metrics_endpoint():
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["api-keys"])
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
-app.include_router(workflows.router, prefix="/api/v1", tags=["workflows"])
 app.include_router(storage.router, prefix="/api/v1", tags=["storage"])
 app.include_router(workers.router, prefix="/api/v1/workers", tags=["workers"])
 app.include_router(queues.router, prefix="/api/v1/queues", tags=["queues"])
