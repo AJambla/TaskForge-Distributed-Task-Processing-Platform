@@ -34,6 +34,12 @@ task_attempts_total = Counter(
     registry=REGISTRY,
 )
 
+task_retries_total = Counter(
+    "task_retries_total",
+    "Total number of task retries published",
+    registry=REGISTRY,
+)
+
 worker_heartbeat_missed_total = Counter(
     "worker_heartbeat_missed_total",
     "Total number of missed heartbeats",

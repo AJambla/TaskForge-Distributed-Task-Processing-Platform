@@ -16,6 +16,40 @@ from app.models.worker_registration import WorkerRegistration
 
 logger = logging.getLogger("core.recovery")
 
+try:
+    from prometheus_client import REGISTRY, Counter
+
+    try:
+        tasks_recovered_total = Counter(
+            "tasks_recovered_total",
+            "Total number of abandoned tasks recovered and re-queued",
+            registry=REGISTRY,
+        )
+    except ValueError:
+        tasks_recovered_total = getattr(REGISTRY, "_names_to_collectors", {}).get("tasks_recovered_total")
+
+    try:
+        worker_failures_total = Counter(
+            "worker_failures_total",
+            "Total number of worker failures / dead workers detected",
+            registry=REGISTRY,
+        )
+    except ValueError:
+        worker_failures_total = getattr(REGISTRY, "_names_to_collectors", {}).get("worker_failures_total")
+
+    try:
+        tasks_dlq_total = Counter(
+            "tasks_dlq_total",
+            "Total number of tasks moved to dead letter queue after worker crash",
+            registry=REGISTRY,
+        )
+    except ValueError:
+        tasks_dlq_total = getattr(REGISTRY, "_names_to_collectors", {}).get("tasks_dlq_total")
+except Exception:
+    tasks_recovered_total = None
+    worker_failures_total = None
+    tasks_dlq_total = None
+
 
 class RecoveryStats(NamedTuple):
     dead_workers: int
@@ -59,6 +93,11 @@ async def recover_stale_tasks(
             worker.hostname,
             worker.last_heartbeat_at.isoformat() if worker.last_heartbeat_at else "never",
         )
+    if dead_workers and worker_failures_total is not None:
+        try:
+            worker_failures_total.inc(len(dead_workers))
+        except Exception:
+            pass
 
     # 3. Find all tasks with open attempts on those dead workers
     stmt = (
@@ -128,6 +167,18 @@ async def recover_stale_tasks(
                 task.attempt_count,
                 task.max_attempts,
             )
+
+    if recovered_count and tasks_recovered_total is not None:
+        try:
+            tasks_recovered_total.inc(recovered_count)
+        except Exception:
+            pass
+
+    if dead_letter_count and tasks_dlq_total is not None:
+        try:
+            tasks_dlq_total.inc(dead_letter_count)
+        except Exception:
+            pass
 
     await db.commit()
 

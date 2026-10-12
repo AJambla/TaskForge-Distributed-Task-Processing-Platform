@@ -229,6 +229,20 @@ async def get_queue_depths() -> dict[str, int]:
 BACKPRESSURE_CACHE_KEY: Final[str] = "backpressure:total_depth"
 QUEUE_DEPTH_CACHE_KEY: Final[str] = "queue:total_depth"
 
+try:
+    from prometheus_client import REGISTRY, Counter
+
+    try:
+        backpressure_shed_total = Counter(
+            "backpressure_shed_total",
+            "Total number of requests rejected by backpressure admission control (HTTP 429)",
+            registry=REGISTRY,
+        )
+    except ValueError:
+        backpressure_shed_total = getattr(REGISTRY, "_names_to_collectors", {}).get("backpressure_shed_total")
+except Exception:
+    backpressure_shed_total = None
+
 
 async def sample_queue_depths(
     redis_client=None, key: str = BACKPRESSURE_CACHE_KEY
@@ -288,6 +302,11 @@ async def check_backpressure() -> None:
             total,
             threshold,
         )
+        if backpressure_shed_total is not None:
+            try:
+                backpressure_shed_total.inc()
+            except Exception:
+                pass
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={

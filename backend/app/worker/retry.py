@@ -49,6 +49,11 @@ async def publish_retry(
         message,
         routing_key=routing_key,
     )
+    try:
+        from app.worker.metrics import task_retries_total
+        task_retries_total.inc()
+    except Exception:
+        pass
     logger.info(
         "Published retry for task %s to bucket '%s' (%ds delay).",
         task_id,
