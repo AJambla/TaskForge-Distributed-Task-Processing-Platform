@@ -71,8 +71,15 @@ def classify_failure(
         return FailureClassification.WORKER_CRASH
 
     # 3. Rate limiting / 429
-    if "429" in msg or "rate limit" in msg or "rate_limit" in err_type:
+    if (
+        "429" in msg
+        or "rate limit" in msg
+        or "ratelimit" in msg
+        or "rate_limit" in err_type
+        or "ratelimit" in err_type
+    ):
         return FailureClassification.RATE_LIMITED
+
 
     # 4. Transient network/infrastructure errors
     transient_indicators = [

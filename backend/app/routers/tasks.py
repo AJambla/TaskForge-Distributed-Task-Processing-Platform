@@ -20,6 +20,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
+
 
 from app.config import get_settings
 from app.core.deps import CurrentUser, DBSession
@@ -461,7 +463,7 @@ async def get_task(
 ) -> TaskResponse:
     """Get a single task by ID (ownership enforced for non-admins)."""
     result = await db.execute(
-        select(Task).where(Task.id == task_id)
+        select(Task).where(Task.id == task_id).options(selectinload(Task.attempts))
     )
     task = result.scalar_one_or_none()
     if not task:
@@ -502,8 +504,9 @@ async def cancel_task(
 ) -> TaskResponse:
     """Cancel a task that is still queued or retrying."""
     result = await db.execute(
-        select(Task).where(Task.id == task_id)
+        select(Task).where(Task.id == task_id).options(selectinload(Task.attempts))
     )
+
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(
@@ -573,8 +576,9 @@ async def retry_task(
 ) -> TaskResponse:
     """Re-queue a failed or dead-letter task."""
     result = await db.execute(
-        select(Task).where(Task.id == task_id)
+        select(Task).where(Task.id == task_id).options(selectinload(Task.attempts))
     )
+
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(
