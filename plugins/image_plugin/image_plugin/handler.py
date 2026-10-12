@@ -17,10 +17,14 @@ import httpx
 from PIL import Image
 from pydantic import BaseModel, Field
 
+from app.core.ssrf import validate_url_ssrf_safe
 from app.worker.context import TaskContext
 from app.worker.handlers import register_handler
 
 logger = logging.getLogger("plugins.image_plugin")
+
+
+MAX_IMAGE_DOWNLOAD_BYTES: int = 15 * 1024 * 1024  # 15 MB download limit (CRIT-05)
 
 
 class ImageResizePayload(BaseModel):
@@ -32,6 +36,7 @@ class ImageResizePayload(BaseModel):
 
 
 def _resize_sync(image_bytes: bytes, max_width: int, max_height: int) -> tuple[bytes, str]:
+    Image.MAX_IMAGE_PIXELS = 10_000_000  # 10 megapixels max decompression bomb cap
     stream = io.BytesIO(image_bytes)
     img = Image.open(stream)
     img = img.convert("RGB") if img.mode == "RGBA" else img
@@ -56,11 +61,30 @@ async def handle_image_resize(payload: dict[str, Any], ctx: TaskContext) -> dict
     if data_uri and data_uri.startswith("data:"):
         _, b64_part = data_uri.split(",", 1)
         image_bytes = base64.b64decode(b64_part)
+        if len(image_bytes) > MAX_IMAGE_DOWNLOAD_BYTES:
+            raise ValueError(
+                f"Image payload exceeds maximum allowed size of {MAX_IMAGE_DOWNLOAD_BYTES} bytes"
+            )
     elif source_url:
+        validate_url_ssrf_safe(source_url)
         async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
-            resp = await client.get(source_url)
-            resp.raise_for_status()
-            image_bytes = resp.content
+            async with client.stream("GET", source_url) as resp:
+                resp.raise_for_status()
+                content_length = resp.headers.get("content-length")
+                if content_length and int(content_length) > MAX_IMAGE_DOWNLOAD_BYTES:
+                    raise ValueError(
+                        f"Image download exceeds maximum allowed size of {MAX_IMAGE_DOWNLOAD_BYTES} bytes"
+                    )
+                chunks: list[bytes] = []
+                downloaded = 0
+                async for chunk in resp.aiter_bytes():
+                    downloaded += len(chunk)
+                    if downloaded > MAX_IMAGE_DOWNLOAD_BYTES:
+                        raise ValueError(
+                            f"Image download exceeds maximum allowed size of {MAX_IMAGE_DOWNLOAD_BYTES} bytes"
+                        )
+                    chunks.append(chunk)
+                image_bytes = b"".join(chunks)
     else:
         raise ValueError("Image resize requires 'source_url' or 'data'")
 
