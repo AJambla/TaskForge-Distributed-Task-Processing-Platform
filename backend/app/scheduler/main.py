@@ -11,7 +11,7 @@ import os
 import signal
 import socket
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -246,38 +246,26 @@ async def _mark_scheduler_offline(db, worker_id) -> None:
 
 
 async def prune_stale_workers(db: AsyncSession | None = None) -> int:
-    cutoff = datetime.now(timezone.utc) - timedelta(
-        seconds=SETTINGS.worker_heartbeat_timeout_seconds
-    )
-    stmt = (
-        update(WorkerRegistration)
-        .where(
-            WorkerRegistration.status == "online",
-            WorkerRegistration.last_heartbeat_at < cutoff,
-        )
-        .values(
-            status="offline",
-            last_heartbeat_at=WorkerRegistration.last_heartbeat_at,
-        )
-    )
+    """Detect dead workers and recover their abandoned tasks."""
+    from app.core.recovery import recover_stale_tasks
     if db is not None:
-        result = await db.execute(stmt)
-        await db.commit()
-        pruned_count = result.rowcount
+        stats = await recover_stale_tasks(
+            db, stale_threshold_seconds=SETTINGS.worker_heartbeat_timeout_seconds
+        )
     else:
         async with SchedulerSessionLocal() as session:
-            result = await session.execute(stmt)
-            await session.commit()
-            pruned_count = result.rowcount
+            stats = await recover_stale_tasks(
+                session, stale_threshold_seconds=SETTINGS.worker_heartbeat_timeout_seconds
+            )
 
-    if pruned_count > 0:
+    if stats.dead_workers > 0:
         try:
             from app.worker.metrics import worker_heartbeat_missed_total
-            worker_heartbeat_missed_total.inc(pruned_count)
+            worker_heartbeat_missed_total.inc(stats.dead_workers)
         except Exception:
             pass
 
-    return pruned_count
+    return stats.dead_workers
 
 
 async def main() -> None:
@@ -323,11 +311,25 @@ async def main() -> None:
                 except Exception:
                     logger.exception("Error in reschedule loop")
                 try:
-                    pruned = await prune_stale_workers()
-                    if pruned > 0:
-                        logger.info("Pruned %d stale worker(s) to offline.", pruned)
+                    from app.core.recovery import recover_stale_tasks
+                    async with SchedulerSessionLocal() as session:
+                        stats = await recover_stale_tasks(
+                            session, stale_threshold_seconds=SETTINGS.worker_heartbeat_timeout_seconds
+                        )
+                    if stats.dead_workers > 0:
+                        try:
+                            from app.worker.metrics import worker_heartbeat_missed_total
+                            worker_heartbeat_missed_total.inc(stats.dead_workers)
+                        except Exception:
+                            pass
+                        logger.info(
+                            "Recovery sweep: marked %d worker(s) offline, recovered %d task(s), %d dead-lettered.",
+                            stats.dead_workers,
+                            stats.recovered_tasks,
+                            stats.dead_lettered_tasks,
+                        )
                 except Exception:
-                    logger.exception("Error in prune_stale_workers")
+                    logger.exception("Error in worker crash recovery loop")
             else:
                 logger.debug("Another scheduler instance is currently the active scan leader.")
 
