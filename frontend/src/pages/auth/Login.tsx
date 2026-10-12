@@ -26,9 +26,20 @@ export default function Login() {
       await login({ email, password });
       navigate("/app/tasks");
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: { message?: string } } } };
+      const axiosErr = err as {
+        response?: {
+          data?: {
+            detail?: { error?: { message?: string } } | string;
+            error?: { message?: string };
+          };
+        };
+      };
+      const detail = axiosErr.response?.data?.detail;
+      const detailMsg = typeof detail === "object" ? detail?.error?.message : detail;
       setError(
-        axiosErr.response?.data?.error?.message || "Invalid email or password"
+        detailMsg ||
+        axiosErr.response?.data?.error?.message ||
+        "Invalid email or password"
       );
     } finally {
       setLoading(false);
