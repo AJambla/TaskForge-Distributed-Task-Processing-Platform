@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     # Backpressure
     backpressure_enabled: bool = False
     backpressure_queue_depth_threshold: int = 500
+    backpressure_critical_depth: int = 500
 
     # Sandbox
     sandbox_enabled: bool = True
