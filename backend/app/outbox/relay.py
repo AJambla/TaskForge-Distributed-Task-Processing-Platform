@@ -65,7 +65,11 @@ class OutboxRelayService:
         self._last_cleanup_time = 0.0
 
     async def run_once(self) -> int:
-        """Claim a batch of pending events using SKIP LOCKED and relay to RabbitMQ."""
+        """Claim a batch of pending events using SKIP LOCKED and relay to RabbitMQ.
+
+        Holds row locks across the entire batch to prevent duplicate claims by
+        concurrent relay runners, committing all updates atomically at the end.
+        """
         drained_count = 0
         async with self.session_factory() as db:
             try:
@@ -85,7 +89,7 @@ class OutboxRelayService:
                         publish_duration = time.monotonic() - start_publish
                         outbox_publish_latency_seconds.observe(publish_duration)
 
-                        await mark_published(db, event.id)
+                        await mark_published(db, event.id, commit=False)
                         drained_count += 1
 
                         if event.created_at:
@@ -95,7 +99,7 @@ class OutboxRelayService:
                             outbox_message_age_seconds.observe(max(0.0, age))
 
                     except Exception as pub_exc:
-                        await mark_failed(db, event.id, error=str(pub_exc))
+                        await mark_failed(db, event.id, error=str(pub_exc), commit=False)
                         logger.warning(
                             "Relay publication error for event %s (task %s): %s",
                             event.id,
@@ -103,7 +107,10 @@ class OutboxRelayService:
                             pub_exc,
                         )
 
+                await db.commit()
+
             except Exception as batch_exc:
+                await db.rollback()
                 logger.error("Error claiming or processing outbox batch: %s", batch_exc)
 
         return drained_count

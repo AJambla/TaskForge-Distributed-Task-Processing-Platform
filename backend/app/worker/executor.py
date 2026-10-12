@@ -17,8 +17,18 @@ _TIMEOUT_MAP: dict[str, str] = {
 }
 
 
-def get_timeout(task_type: str) -> int:
-    """Retrieve configured timeout for task type."""
+def get_timeout(task_type: str, task_payload: dict | None = None) -> int:
+    """Retrieve configured timeout for task type with optional payload override."""
+    if task_payload and isinstance(task_payload, dict):
+        override = task_payload.get("timeout_seconds") or task_payload.get("timeout")
+        if override is not None:
+            try:
+                val = int(override)
+                if val > 0:
+                    return val
+            except (ValueError, TypeError):
+                pass
+
     from app.worker.handlers import get_handler_metadata
     meta = get_handler_metadata(task_type)
     if meta and "timeout_seconds" in meta:

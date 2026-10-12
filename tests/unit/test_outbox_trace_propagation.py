@@ -61,4 +61,4 @@ async def test_relay_forwards_traceparent_to_rabbitmq():
             priority=1,
             traceparent="00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
         )
-        mock_mark.assert_called_once_with(mock_db, event.id)
+        mock_mark.assert_called_once_with(mock_db, event.id, commit=False)
