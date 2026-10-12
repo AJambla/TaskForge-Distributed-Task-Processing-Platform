@@ -141,3 +141,103 @@ export type TaskStatus =
   | "cancelled";
 
 export type WorkerStatus = "online" | "offline" | "draining";
+
+export interface ReliabilitySnapshot {
+  tasks_lost: number;
+  duplicate_executions: number;
+  tasks_recovered: number;
+  retries: number;
+  dlq_tasks: number;
+  success_rate_percent: number;
+}
+
+export interface WindowedRate {
+  "5m": number;
+  "60m": number;
+}
+
+export interface ThroughputSnapshot {
+  submissions_per_min: WindowedRate;
+  completions_per_min: WindowedRate;
+  total_submitted: number;
+  history_points: number[];
+  history_labels: string[];
+}
+
+export interface LastRecoveryEvent {
+  worker_id: string | null;
+  reason: string | null;
+  recovered_tasks: number;
+  occurred_at: string | null;
+}
+
+export interface WorkersSnapshot {
+  active: number;
+  healthy: number;
+  busy: number;
+  idle: number;
+  recovering: number;
+  unhealthy: number;
+  running_tasks: number;
+  capacity: number;
+  last_recovery: LastRecoveryEvent | null;
+}
+
+export interface LatencySnapshot {
+  pickup_seconds: {
+    avg: number | null;
+  };
+  execution_seconds: {
+    avg: number | null;
+    p50: number | null;
+    p95: number | null;
+    p99: number | null;
+  };
+}
+
+export interface BackpressureSnapshot {
+  status: "NORMAL" | "THROTTLED" | "SATURATED";
+  rate_limited_requests: number;
+  utilization_percent: number;
+}
+
+export interface RecoverySnapshot {
+  missed_heartbeats: number;
+  recovery_events: number;
+  stale_tasks: number;
+}
+
+export interface QueueTypeDetail {
+  task_type: string;
+  main_depth: number;
+  retry_depth: number;
+  dlq_depth: number;
+  total_depth: number;
+  status: "Healthy" | "Attention";
+}
+
+export interface QueuesSnapshot {
+  main: number;
+  retry: number;
+  dlq: number;
+  by_type: QueueTypeDetail[];
+}
+
+export interface ExternalLinks {
+  grafana: string;
+  jaeger: string;
+  prometheus: string;
+}
+
+export interface MetricsSummaryResponse {
+  timestamp: string;
+  reliability: ReliabilitySnapshot;
+  throughput: ThroughputSnapshot;
+  workers: WorkersSnapshot;
+  latency: LatencySnapshot;
+  backpressure: BackpressureSnapshot;
+  recovery: RecoverySnapshot;
+  queues: QueuesSnapshot;
+  links: ExternalLinks;
+}
+

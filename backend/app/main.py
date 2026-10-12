@@ -14,7 +14,7 @@ from app.core.logging import configure_logging
 from app.core.rabbitmq import get_publisher
 from app.core.redis import get_redis
 from app.database import engine
-from app.routers import api_keys, auth, queues, tasks, workers
+from app.routers import api_keys, auth, metrics, queues, tasks, workers
 
 settings = get_settings()
 configure_logging(
@@ -139,6 +139,7 @@ app.include_router(api_keys.router, prefix="/api/v1/api-keys", tags=["api-keys"]
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(workers.router, prefix="/api/v1/workers", tags=["workers"])
 app.include_router(queues.router, prefix="/api/v1/queues", tags=["queues"])
+app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])
 
 
 @app.get("/api/v1/handlers", tags=["tasks"], summary="List registered handlers")

@@ -99,11 +99,14 @@ class Settings(BaseSettings):
     sandbox_cpu_limit_seconds: float = 30.0
     sandbox_memory_limit_mb: int = 256
 
-    # OpenTelemetry & Observability (FEAT-03)
+    # OpenTelemetry & Observability (FEAT-03 & Step 6.3)
     otel_enabled: bool = False
     otel_service_name: str = "taskforge-api"
     otel_exporter_otlp_endpoint: str = "http://localhost:4318/v1/traces"
     jaeger_ui_url: str = "http://localhost:16686/trace/{trace_id}"
+    jaeger_url: str = "http://localhost:16686"
+    grafana_url: str = "http://localhost:3000"
+    prometheus_url: str = "http://localhost:9090"
 
 
 @lru_cache

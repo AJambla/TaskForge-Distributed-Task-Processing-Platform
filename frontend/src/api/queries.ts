@@ -1,6 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import client from "./client";
-import type { QueueMetrics, QueueStats, Task, TaskListResponse, Worker } from "../types";
+import type { MetricsSummaryResponse, QueueMetrics, QueueStats, Task, TaskListResponse, Worker } from "../types";
+
+export function useMetricsSummary(enabled = true) {
+  return useQuery({
+    queryKey: ["metrics", "summary"],
+    queryFn: async () => {
+      const res = await client.get<MetricsSummaryResponse>("/metrics/summary");
+      return res.data;
+    },
+    refetchInterval: 5_000,
+    enabled,
+    retry: false,
+  });
+}
 
 export function useRecentTasks(pageSize = 100) {
   return useQuery({
