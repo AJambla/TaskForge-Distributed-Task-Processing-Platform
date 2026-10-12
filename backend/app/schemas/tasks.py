@@ -159,16 +159,9 @@ class TaskResponse(BaseModel):
         attempts_list: list[TaskAttemptResponse] = []
         raw_attempts = None
         if include_attempts:
-            try:
-                from sqlalchemy.orm import inspect as sa_inspect
-                insp = sa_inspect(task, raise_errors=False)
-                if insp is not None and hasattr(insp, "unloaded") and "attempts" in insp.unloaded:
-                    raw_attempts = None
-                else:
-                    raw_attempts = getattr(task, "attempts", None)
-            except Exception:
-                raw_attempts = getattr(task, "attempts", None)
+            from app.schemas.diagnostics import resolve_task_attempts
 
+            raw_attempts = resolve_task_attempts(task)
             if raw_attempts:
                 try:
                     attempts_list = [
