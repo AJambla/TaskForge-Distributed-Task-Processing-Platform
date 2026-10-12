@@ -7,6 +7,8 @@ import os
 import socket
 import traceback
 from datetime import datetime, timezone
+from typing import Any
+
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +17,12 @@ from app.config import get_settings
 from app.models.task import Task
 from app.models.task_attempt import TaskAttempt
 from app.models.worker_registration import WorkerRegistration
-from app.worker.metrics import workers_online_total
+from app.worker.metrics import (
+    worker_active_tasks,
+    worker_concurrency_limit,
+    worker_utilization_ratio,
+    workers_online_total,
+)
 
 logger = logging.getLogger("worker.lifecycle")
 _SETTINGS = get_settings()
@@ -167,20 +174,64 @@ async def register_worker(db: AsyncSession) -> WorkerRegistration:
     await db.refresh(worker)
     logger.info("Worker registered: id=%s hostname=%s", worker.id, worker.hostname)
     workers_online_total.set(1)
+    worker_concurrency_limit.set(_SETTINGS.worker_concurrency)
     return worker
 
 
-async def update_heartbeat(db: AsyncSession, worker: WorkerRegistration, active_count: int = 0) -> None:
-    """Persist worker heartbeat timestamp and current task load."""
+async def update_heartbeat(
+    db: AsyncSession,
+    worker: WorkerRegistration,
+    active_count: int = 0,
+    concurrency_limit: int | None = None,
+) -> dict[str, Any]:
+    """Persist worker heartbeat timestamp, current task count, and capacity metrics."""
+    limit = (
+        concurrency_limit
+        or getattr(worker, "concurrency_limit", None)
+        or _SETTINGS.worker_concurrency
+    )
+    utilization_rate = round(active_count / max(1, limit), 4)
+
+    values = {
+        "last_heartbeat_at": datetime.now(timezone.utc),
+        "current_task_count": active_count,
+    }
+    if concurrency_limit is not None:
+        values["concurrency_limit"] = concurrency_limit
+
     await db.execute(
         update(WorkerRegistration)
         .where(WorkerRegistration.id == worker.id)
-        .values(
-            last_heartbeat_at=datetime.now(timezone.utc),
-            current_task_count=active_count,
-        )
+        .values(**values)
     )
     await db.commit()
+
+    # Update Prometheus gauges
+    worker_active_tasks.set(active_count)
+    worker_concurrency_limit.set(limit)
+    worker_utilization_ratio.set(utilization_rate)
+
+    # Persist live capacity snapshot in Redis for dashboards
+    try:
+        from app.core.redis import get_redis
+        redis_client = await get_redis()
+        heartbeat_data = json.dumps({
+            "worker_id": str(worker.id),
+            "hostname": getattr(worker, "hostname", "unknown"),
+            "active_task_count": active_count,
+            "concurrency_limit": limit,
+            "utilization_rate": utilization_rate,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        await redis_client.set(f"worker:heartbeat:{worker.id}", heartbeat_data, ex=30)
+    except Exception as exc:
+        logger.debug("Failed to publish worker heartbeat to Redis: %s", exc)
+
+    return {
+        "active_task_count": active_count,
+        "concurrency_limit": limit,
+        "utilization_rate": utilization_rate,
+    }
 
 
 async def set_worker_offline(db: AsyncSession, worker_id) -> None:
@@ -193,3 +244,6 @@ async def set_worker_offline(db: AsyncSession, worker_id) -> None:
     await db.commit()
     logger.info("Worker marked offline: id=%s", worker_id)
     workers_online_total.set(0)
+    worker_active_tasks.set(0)
+    worker_utilization_ratio.set(0.0)
+

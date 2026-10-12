@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class TaskAttemptResponse(BaseModel):
@@ -30,6 +30,13 @@ class WorkerListItem(BaseModel):
     tasks_failed: int
     registered_at: datetime
 
+    @computed_field
+    @property
+    def utilization_rate(self) -> float:
+        count = self.current_task_count or 0
+        limit = self.concurrency_limit or 1
+        return round(count / max(1, limit), 4)
+
     model_config = {"from_attributes": True}
 
 
@@ -45,4 +52,12 @@ class WorkerDetail(BaseModel):
     registered_at: datetime
     recent_attempts: list[TaskAttemptResponse]
 
+    @computed_field
+    @property
+    def utilization_rate(self) -> float:
+        count = self.current_task_count or 0
+        limit = self.concurrency_limit or 1
+        return round(count / max(1, limit), 4)
+
     model_config = {"from_attributes": True}
+

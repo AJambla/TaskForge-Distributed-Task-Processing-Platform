@@ -75,14 +75,18 @@ class RabbitMQPublisher:
         task_type: str,
         priority: int = 0,
         traceparent: str | None = None,
+        routing_key: str | None = None,
+        route_by_priority: bool = False,
     ) -> None:
         """Publish a task message to the main exchange.
 
         Args:
             task_id: UUID string of the task to process.
-            task_type: routing key (e.g. 'email_send').
+            task_type: logical task type (e.g. 'email_send').
             priority: integer priority (clamped to 0-10 for AMQP priority queues).
             traceparent: optional W3C traceparent context string.
+            routing_key: explicit AMQP routing key override.
+            route_by_priority: if True, routes directly to tasks.{tier}.
         """
         if self._connection is None or self._connection.is_closed:
             await self.connect()
@@ -99,14 +103,26 @@ class RabbitMQPublisher:
             )
 
         from app.core.tracing import create_traceparent
+        from app.worker.priority import get_priority_tier
 
         tp = traceparent or create_traceparent()
         clamped_priority = max(0, min(10, int(priority)))
+        tier = get_priority_tier(clamped_priority)
+
+        if routing_key is not None:
+            resolved_routing_key = routing_key
+        elif route_by_priority:
+            resolved_routing_key = f"tasks.{tier}"
+        else:
+            resolved_routing_key = task_type
+
         body = task_id.encode("utf-8")
         headers = {
             "x-task-type": task_type,
             "x-task-id": task_id,
             "traceparent": tp,
+            "x-priority": clamped_priority,
+            "x-priority-tier": tier,
         }
         message = Message(
             body,
@@ -115,13 +131,14 @@ class RabbitMQPublisher:
             priority=clamped_priority,
             headers=headers,
         )
-        await self._exchange.publish(message, routing_key=task_type)
+        await self._exchange.publish(message, routing_key=resolved_routing_key)
         logger.info(
-            "Published task %s to exchange '%s' with routing key '%s' (priority=%d, traceparent=%s).",
+            "Published task %s to exchange '%s' with routing key '%s' (priority=%d, tier=%s, traceparent=%s).",
             task_id,
             EXCHANGE_NAME,
-            task_type,
+            resolved_routing_key,
             clamped_priority,
+            tier,
             tp,
         )
 
@@ -151,10 +168,20 @@ async def publish_task(
     task_type: str,
     priority: int = 0,
     traceparent: str | None = None,
+    routing_key: str | None = None,
+    route_by_priority: bool = False,
 ) -> None:
     """Convenience function to publish a task message."""
     publisher = await get_publisher()
-    await publisher.publish(task_id, task_type, priority=priority, traceparent=traceparent)
+    await publisher.publish(
+        task_id,
+        task_type,
+        priority=priority,
+        traceparent=traceparent,
+        routing_key=routing_key,
+        route_by_priority=route_by_priority,
+    )
+
 
 
 async def purge_queue(queue_name: str) -> int:
@@ -174,6 +201,7 @@ async def get_queue_depths() -> dict[str, int]:
     """Return {queue_name: message_count} for all taskforge queues.
 
     Queries the RabbitMQ management API. Returns empty dict on failure.
+    Uses a fast 1.0s timeout to avoid blocking callers on cache miss.
     """
     settings = get_settings()
     management_url = settings.rabbitmq_management_url
@@ -183,7 +211,7 @@ async def get_queue_depths() -> dict[str, int]:
 
     url = f"{management_url}/api/queues/{vhost}"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=1.0) as client:
             resp = await client.get(url)
             if resp.status_code != 200:
                 logger.warning(
@@ -198,11 +226,36 @@ async def get_queue_depths() -> dict[str, int]:
         return {}
 
 
+BACKPRESSURE_CACHE_KEY: Final[str] = "backpressure:total_depth"
+QUEUE_DEPTH_CACHE_KEY: Final[str] = "queue:total_depth"
+
+
+async def sample_queue_depths(
+    redis_client=None, key: str = BACKPRESSURE_CACHE_KEY
+) -> int:
+    """Sample current RabbitMQ queue depths and update Redis cache.
+
+    Writes to Redis with a 2-second TTL. Returns total queue depth.
+    """
+    depths = await get_queue_depths()
+    total = sum(depths.values())
+    try:
+        if redis_client is None:
+            from app.core.redis import get_redis
+            redis_client = await get_redis()
+        if redis_client is not None:
+            await redis_client.set(key, total, ex=2)
+    except Exception:
+        logger.warning("Failed to cache queue depth in Redis", exc_info=True)
+    return total
+
+
 async def check_backpressure() -> None:
     """Raise HTTPException(status=429) if queue depth exceeds threshold.
 
-    Reads from Redis cache with a 2-second TTL to avoid hitting RabbitMQ
-    management API on every request. Fails open if check fails.
+    Reads cached queue depth from Redis in <1ms.
+    If cache misses, samples RabbitMQ depths with a fast 1s timeout.
+    Fails open if Redis or RabbitMQ are unreachable.
     """
     settings = get_settings()
     if not settings.backpressure_enabled:
@@ -213,35 +266,38 @@ async def check_backpressure() -> None:
     try:
         from app.core.redis import get_redis
         redis_client = await get_redis()
-        cached = await redis_client.get("backpressure:total_depth")
+        # Fast path: check Redis cache in <1ms
+        cached = await redis_client.get(BACKPRESSURE_CACHE_KEY)
+        if cached is None:
+            cached = await redis_client.get(QUEUE_DEPTH_CACHE_KEY)
         if cached is not None:
             total = int(cached)
     except Exception:
         pass
 
     if total is None:
-        depths = await get_queue_depths()
-        total = sum(depths.values())
-        if redis_client is not None:
-            try:
-                await redis_client.set("backpressure:total_depth", total, ex=2)
-            except Exception:
-                pass
+        total = await sample_queue_depths(redis_client=redis_client)
 
-    if total > settings.backpressure_queue_depth_threshold:
+    threshold = getattr(settings, "backpressure_critical_depth", None)
+    if threshold is None or not isinstance(threshold, (int, float)):
+        threshold = settings.backpressure_queue_depth_threshold
+
+    if total > threshold:
         logger.warning(
-            "Backpressure triggered: total queue depth %d exceeds threshold %d.",
+            "Backpressure triggered: total queue depth %d exceeds critical threshold %d.",
             total,
-            settings.backpressure_queue_depth_threshold,
+            threshold,
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
                 "error": {
                     "code": "QUEUE_FULL",
-                    "message": "System is backpressuring. Please retry.",
+                    "message": "Task queue saturated, system in backpressure shedding mode",
                     "field": None,
                 }
             },
-            headers={"Retry-After": "30"},
+            headers={"Retry-After": "5"},
         )
+
+
