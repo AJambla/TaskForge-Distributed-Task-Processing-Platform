@@ -102,19 +102,28 @@ async def mark_failure(
     outcome: str,
     exc: Exception | None = None,
     worker_id=None,
+    error_message: str | None = None,
+    error_detail: dict | None = None,
 ) -> None:
     """Transition attempt to failed/timeout state and task to retrying or failed."""
     attempt.outcome = outcome
     attempt.finished_at = datetime.now(timezone.utc)
-    if exc is not None:
-        attempt.error_message = str(exc)
-        attempt.error_detail = {"traceback": traceback.format_exc()}
+    if error_message is not None:
+        attempt.error_message = error_message
+    elif exc is not None:
+        attempt.error_message = str(exc) if str(exc) else exc.__class__.__name__
+
+    if error_detail is not None:
+        attempt.error_detail = error_detail
+    elif exc is not None:
+        attempt.error_detail = {"traceback": traceback.format_exc(), "error_type": exc.__class__.__name__}
+
     if task.attempt_count < task.max_attempts:
         task.status = "retrying"
     else:
         task.status = "failed"
     await db.commit()
-    if outcome == "failure":
+    if outcome in ("failure", "timeout"):
         await update_worker_stats(db, worker_id, tasks_failed=1)
 
     # Publish SSE event via Redis Pub/Sub (IMP-19)
