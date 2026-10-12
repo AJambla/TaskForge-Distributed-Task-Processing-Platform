@@ -68,7 +68,7 @@ async def claim_pending_events(
     return list(result.scalars().all())
 
 
-async def mark_published(db: AsyncSession, event_id: UUID) -> None:
+async def mark_published(db: AsyncSession, event_id: UUID, commit: bool = True) -> None:
     """Mark an outbox event as successfully published."""
     event = await db.get(TaskOutbox, event_id)
     if not event:
@@ -76,7 +76,10 @@ async def mark_published(db: AsyncSession, event_id: UUID) -> None:
     now = datetime.now(timezone.utc)
     event.status = "published"
     event.processed_at = now
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     outbox_messages_relayed_total.labels(task_type=event.task_type).inc()
 
 
@@ -85,13 +88,14 @@ async def mark_failed(
     event_id: UUID,
     error: str,
     max_retries: int = 10,
+    commit: bool = True,
 ) -> None:
     """Record a failure and schedule next exponential backoff attempt."""
     event = await db.get(TaskOutbox, event_id)
     if not event:
         return
     now = datetime.now(timezone.utc)
-    event.retry_count += 1
+    event.retry_count = (event.retry_count or 0) + 1
     event.last_attempt_at = now
     event.last_error = str(error)
 
@@ -117,5 +121,8 @@ async def mark_failed(
         )
         outbox_retry_total.labels(task_type=event.task_type).inc()
 
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     outbox_relay_errors_total.labels(task_type=event.task_type).inc()
