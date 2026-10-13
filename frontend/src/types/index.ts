@@ -285,3 +285,21 @@ export interface DLQInspectionResponse {
   }>;
 }
 
+export interface APIKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface CreateAPIKeyResponse {
+  id: string;
+  name: string;
+  key: string;
+  key_prefix: string;
+  created_at: string;
+}
+
+
