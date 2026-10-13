@@ -21,6 +21,11 @@ const handleRetries = (access_token: string) => {
   failedRequests.length = 0;
 };
 
+const handleFailedRetries = (error: unknown) => {
+  failedRequests.forEach(({ reject }) => reject(error));
+  failedRequests.length = 0;
+};
+
 const retryFailedRequests = async (originalRequest: any) => {
   try {
     const refreshedToken = await new Promise<string>((resolve, reject) => {
@@ -34,7 +39,8 @@ const retryFailedRequests = async (originalRequest: any) => {
 };
 
 const refreshAccessToken = async (refreshToken: string) => {
-  const response = await client.post("/auth/refresh", { refresh_token: refreshToken });
+  // Use raw axios to avoid invoking client's response interceptor
+  const response = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
   const { access_token, refresh_token, expires_in } = response.data;
   localStorage.setItem("access_token", access_token);
   if (refresh_token) {
@@ -58,7 +64,8 @@ client.interceptors.response.use(
     const originalRequest = error.config;
     const isAuthRoute =
       originalRequest?.url?.includes("/auth/login") ||
-      originalRequest?.url?.includes("/auth/register");
+      originalRequest?.url?.includes("/auth/register") ||
+      originalRequest?.url?.includes("/auth/refresh");
 
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       const refreshToken = localStorage.getItem("refresh_token");
@@ -78,14 +85,23 @@ client.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return client(originalRequest);
         } catch (refreshError) {
-          handleRetries("");
+          handleFailedRetries(refreshError);
           localStorage.removeItem("access_token");
           localStorage.removeItem("refresh_token");
           localStorage.removeItem("access_expires_in");
-          window.location.href = "/login";
+          localStorage.removeItem("user_email");
+          if (window.location.pathname !== "/login") {
+            window.location.href = "/login";
+          }
           return Promise.reject(refreshError);
         } finally {
           isRefreshing = false;
+        }
+      } else {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("user_email");
+        if (window.location.pathname !== "/login") {
+          window.location.href = "/login";
         }
       }
     }

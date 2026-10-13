@@ -53,7 +53,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          setUser(null);
+          setIsAuthenticated(false);
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
+          localStorage.removeItem("access_expires_in");
+          localStorage.removeItem("user_email");
+        });
     }
   }, [isAuthenticated]);
 
