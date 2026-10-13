@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
@@ -48,7 +48,7 @@ async def register(
     db: DBSession,
     rate_limit: Annotated[None, Depends(make_rate_limiter(get_settings().rate_limit_auth_per_minute))],
 ) -> RegisterResponse:
-    existing = await db.execute(select(User).where(User.email == body.email))
+    existing = await db.execute(select(User).where(func.lower(User.email) == func.lower(body.email)))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -90,7 +90,7 @@ async def login(
     db: DBSession,
     rate_limit: Annotated[None, Depends(make_rate_limiter(get_settings().rate_limit_auth_per_minute))],
 ) -> LoginResponse:
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(select(User).where(func.lower(User.email) == func.lower(body.email)))
     user = result.scalar_one_or_none()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(
