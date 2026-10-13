@@ -129,6 +129,21 @@ async def consume_task(
     if task.created_at:
         queue_latency_ms = max(0.0, (now_utc - task.created_at).total_seconds() * 1000.0)
 
+    # Close any unclosed previous attempts (orphaned due to worker crash / broker redelivery)
+    if task.attempts:
+        for prev in task.attempts:
+            if prev.finished_at is None or prev.outcome is None:
+                prev.outcome = "failure"
+                prev.finished_at = now_utc
+                prev.error_message = (
+                    "Worker process terminated unexpectedly; message redelivered by broker"
+                )
+                prev.error_detail = {
+                    "reason": "worker_crash_or_restart",
+                    "redelivered": True,
+                    "reclaimed_by_worker": str(worker_id) if worker_id else None,
+                }
+
     task.status = "running"
     task.started_at = now_utc
     task.attempt_count += 1

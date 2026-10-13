@@ -180,3 +180,49 @@ async def test_recover_stale_tasks_dead_letters_exceeded_attempts():
     # No new outbox event added
     assert len(added_objects) == 0
     assert db.commit.called
+
+
+@pytest.mark.asyncio
+async def test_consume_task_closes_orphaned_previous_attempts(monkeypatch):
+    """Verify that when a message is redelivered, any previous unclosed attempt is marked failure."""
+    from app.worker.main import consume_task
+
+    db = AsyncMock()
+    task_id = uuid.uuid4()
+    orphaned_attempt = TaskAttempt(
+        id=uuid.uuid4(),
+        task_id=task_id,
+        attempt_number=1,
+        started_at=datetime.now(timezone.utc),
+        finished_at=None,
+        outcome=None,
+    )
+    task = Task(
+        id=task_id,
+        task_type="email_send",
+        payload={"to": "test@test.com", "subject": "hi", "body": "hello"},
+        status="running",
+        priority=0,
+        attempt_count=1,
+        max_attempts=3,
+        attempts=[orphaned_attempt],
+    )
+
+    mock_res = MagicMock()
+    mock_res.scalar_one_or_none.return_value = task
+    db.execute.return_value = mock_res
+
+    async def fake_handler(payload):
+        return {"status": "sent"}
+
+    monkeypatch.setattr("app.worker.main.get_handler", lambda t: fake_handler)
+
+    status, attempts, max_att, defer = await consume_task(
+        db, str(task_id), "email_send", worker_id=uuid.uuid4()
+    )
+
+    assert orphaned_attempt.outcome == "failure"
+    assert orphaned_attempt.finished_at is not None
+    assert "Worker process terminated unexpectedly" in orphaned_attempt.error_message
+    assert orphaned_attempt.error_detail["redelivered"] is True
+
