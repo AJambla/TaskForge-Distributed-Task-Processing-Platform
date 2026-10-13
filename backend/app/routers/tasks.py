@@ -428,6 +428,17 @@ async def list_tasks(
     )
 
 
+@router.get(
+    "/handlers",
+    summary="List all registered task handlers and metadata (FEAT-06)",
+    tags=["tasks"],
+)
+async def get_registered_handlers() -> dict[str, Any]:
+    """Retrieve all discovered and registered task handlers with their configuration."""
+    from app.worker.handlers import list_handlers
+    return {"handlers": list_handlers()}
+
+
 @router.get("/{task_id}/result", response_model=TaskResultResponse, summary="Retrieve structured task result")
 async def get_task_result(
     task_id: UUID,
@@ -732,16 +743,5 @@ async def stream_task_events(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@router.get(
-    "/handlers",
-    summary="List all registered task handlers and metadata (FEAT-06)",
-    tags=["tasks"],
-)
-async def get_registered_handlers() -> dict[str, Any]:
-    """Retrieve all discovered and registered task handlers with their configuration."""
-    from app.worker.handlers import list_handlers
-    return {"handlers": list_handlers()}
 
 

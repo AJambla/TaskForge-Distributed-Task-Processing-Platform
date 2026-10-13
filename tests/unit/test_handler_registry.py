@@ -41,3 +41,17 @@ def test_register_custom_handler_decorator():
 def test_get_unknown_handler_raises_value_error():
     with pytest.raises(ValueError, match="Unknown task_type: 'non_existent'"):
         get_handler("non_existent")
+
+
+def test_tasks_handlers_endpoint_not_shadowed():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    resp = client.get("/api/v1/tasks/handlers")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "handlers" in data
+    assert "email_send" in data["handlers"]
+    assert "webhook_delivery" in data["handlers"]
+
