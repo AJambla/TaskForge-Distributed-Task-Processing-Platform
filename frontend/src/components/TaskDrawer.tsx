@@ -10,6 +10,7 @@ import { durationBetween, formatSeconds } from "../lib/format";
 import { Button } from "./ui/Button";
 import FailureDiagnosticsCard from "./FailureDiagnosticsCard";
 import JsonViewer from "./JsonViewer";
+import { useTaskEvents } from "../hooks/useTaskEvents";
 
 interface TaskDrawerProps {
   taskId: string | null;
@@ -36,6 +37,11 @@ export default function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
     },
     enabled: Boolean(taskId),
   });
+
+  const isTerminal = task
+    ? ["succeeded", "failed", "dead_letter", "cancelled"].includes(task.status)
+    : false;
+  useTaskEvents(taskId, !isTerminal);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["tasks"] });

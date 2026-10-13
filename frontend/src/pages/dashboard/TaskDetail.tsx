@@ -9,6 +9,7 @@ import StatusPill from "../../components/ui/StatusPill";
 import { Button } from "../../components/ui/Button";
 import FailureDiagnosticsCard from "../../components/FailureDiagnosticsCard";
 import JsonViewer from "../../components/JsonViewer";
+import { useTaskEvents } from "../../hooks/useTaskEvents";
 import { ChevronLeft, ExternalLink } from "lucide-react";
 import { durationBetween, formatSeconds, relativeTime } from "../../lib/format";
 
@@ -35,6 +36,11 @@ export default function TaskDetail() {
     enabled: !!id,
     refetchInterval: 10_000,
   });
+
+  const isTerminal = task
+    ? ["succeeded", "failed", "dead_letter", "cancelled"].includes(task.status)
+    : false;
+  useTaskEvents(id ?? null, !isTerminal);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["tasks"] });
