@@ -157,7 +157,7 @@ export default function Tasks() {
         const parsed = JSON.parse(customJson);
         createMutation.mutate({ ...formData, payload: parsed });
         return;
-      } catch (err: any) {
+      } catch {
         setCustomJsonError("Please enter valid JSON before submitting.");
         return;
       }
