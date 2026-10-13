@@ -6,11 +6,11 @@ import logging
 import os
 import socket
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -156,16 +156,26 @@ async def mark_failure(
 
 async def register_worker(db: AsyncSession) -> WorkerRegistration:
     """Register this worker instance online in the database."""
+    instance_name = f"{_WORKER_HOSTNAME}:{os.getpid()}"
     await db.execute(
         update(WorkerRegistration)
         .where(
-            WorkerRegistration.hostname == _WORKER_HOSTNAME,
+            WorkerRegistration.hostname == instance_name,
             WorkerRegistration.status == "online",
         )
         .values(status="offline")
     )
+    # Prune stale offline registrations older than 24 hours to prevent unbounded table growth
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    await db.execute(
+        delete(WorkerRegistration)
+        .where(
+            WorkerRegistration.status == "offline",
+            WorkerRegistration.last_heartbeat_at < cutoff,
+        )
+    )
     worker = WorkerRegistration(
-        hostname=_WORKER_HOSTNAME,
+        hostname=instance_name,
         status="online",
         concurrency_limit=_SETTINGS.worker_concurrency,
     )

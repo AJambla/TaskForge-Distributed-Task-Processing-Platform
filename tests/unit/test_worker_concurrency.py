@@ -181,3 +181,22 @@ def test_worker_schemas_computed_utilization_rate():
     )
     assert detail.utilization_rate == 0.2
     assert detail.model_dump()["utilization_rate"] == 0.2
+
+
+@pytest.mark.asyncio
+async def test_register_worker_isolates_pid_and_prunes_offline():
+    """Verify register_worker includes PID in hostname and executes offline update and pruning."""
+    import os
+    from app.worker.lifecycle import register_worker
+
+    db = AsyncMock()
+    async def fake_refresh(w):
+        pass
+    db.refresh = fake_refresh
+
+    worker = await register_worker(db)
+    assert f":{os.getpid()}" in worker.hostname
+    assert worker.status == "online"
+    assert db.execute.await_count == 2
+    assert db.commit.await_count == 1
+
