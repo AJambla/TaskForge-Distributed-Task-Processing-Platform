@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { AlertOctagon, Layers, RefreshCcw, Timer, RotateCw } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import PageHeader from "../../components/ui/PageHeader";
@@ -7,14 +8,15 @@ import StatCard from "../../components/ui/StatCard";
 import { BarRow } from "../../components/ui/Charts";
 import { Button } from "../../components/ui/Button";
 import client from "../../api/client";
-import { useQueueStats, useQueues } from "../../api/queries";
-import { formatNumber, formatSeconds, relativeTime } from "../../lib/format";
+import { useQueueStats, useQueues, useDLQInspection } from "../../api/queries";
+import { formatNumber, formatSeconds, relativeTime, shortId } from "../../lib/format";
 import { EmptyState } from "../../components/ui/Field";
 
 export default function Queues() {
   const queryClient = useQueryClient();
   const queuesQuery = useQueues();
   const statsQuery = useQueueStats();
+  const { data: dlqData, isLoading: dlqLoading } = useDLQInspection();
   const [redriveMessage, setRedriveMessage] = useState<string | null>(null);
 
   const redriveMutation = useMutation({
@@ -31,6 +33,16 @@ export default function Queues() {
     onError: (err: any) => {
       setRedriveMessage(err?.response?.data?.detail || "Redrive failed");
       setTimeout(() => setRedriveMessage(null), 4000);
+    },
+  });
+
+  const retryTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      await client.post(`/tasks/${taskId}/retry`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["queues"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 
@@ -152,6 +164,89 @@ export default function Queues() {
           ))}
         </div>
       )}
+
+      <Panel
+        title={
+          <div className="flex items-center justify-between w-full">
+            <span className="inline-flex items-center gap-2">
+              <AlertOctagon size={14} style={{ color: "#a855f7" }} /> Dead-Letter Queue Inspection
+            </span>
+            <span className="mono text-xs" style={{ color: "var(--subtle)" }}>
+              {dlqData?.recent_dead_tasks.length ?? 0} recent failures
+            </span>
+          </div>
+        }
+        delay={0.3}
+        bodyClassName="p-0"
+      >
+        {dlqLoading ? (
+          <div className="p-6 text-center text-xs" style={{ color: "var(--subtle)" }}>
+            Loading dead-letter tasks…
+          </div>
+        ) : !dlqData || dlqData.recent_dead_tasks.length === 0 ? (
+          <div className="p-6">
+            <EmptyState
+              title="No dead-letter tasks"
+              hint="Tasks routed to the DLQ after exhausting retries will appear here for inspection."
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="tbl w-full text-xs">
+              <thead>
+                <tr>
+                  <th>Task ID</th>
+                  <th>Task Type</th>
+                  <th>Failed Attempts</th>
+                  <th>Completed At</th>
+                  <th className="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dlqData.recent_dead_tasks.map((task) => (
+                  <tr key={task.id}>
+                    <td>
+                      <Link
+                        to={`/app/tasks/${task.id}`}
+                        className="mono font-semibold text-blue-400 hover:underline"
+                        title="View task detail and diagnostics"
+                      >
+                        {shortId(task.id)}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className="font-medium" style={{ color: "var(--text)" }}>
+                        {task.task_type.replace(/_/g, " ")}
+                      </span>
+                    </td>
+                    <td className="mono">
+                      <span className="chip chip--failed font-mono text-[11px]">
+                        {task.attempt_count} attempts
+                      </span>
+                    </td>
+                    <td className="mono" title={task.completed_at ? new Date(task.completed_at).toLocaleString() : ""}>
+                      {task.completed_at ? relativeTime(task.completed_at) : "—"}
+                    </td>
+                    <td className="text-right">
+                      <button
+                        type="button"
+                        onClick={() => retryTaskMutation.mutate(task.id)}
+                        disabled={retryTaskMutation.isPending}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded hover:bg-white/10 transition cursor-pointer"
+                        style={{ color: "var(--brand)" }}
+                        title="Retry this individual task"
+                      >
+                        <RotateCw size={12} className={retryTaskMutation.isPending ? "animate-spin" : ""} />
+                        Retry
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
     </div>
   );
 }

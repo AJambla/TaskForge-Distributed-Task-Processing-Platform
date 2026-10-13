@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import client from "../../api/client";
+import { useHandlers } from "../../api/queries";
 import type { Task, TaskCreateRequest, TaskListResponse } from "../../types";
 import PageHeader from "../../components/ui/PageHeader";
 import Panel from "../../components/ui/Panel";
@@ -60,6 +61,41 @@ export default function Tasks() {
   const [drawerTaskId, setDrawerTaskId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState<TaskCreateRequest>(emptyForm);
+  const [isCustomType, setIsCustomType] = useState(false);
+  const [customTypeName, setCustomTypeName] = useState("");
+  const [customJson, setCustomJson] = useState("{\n  \n}");
+  const [customJsonError, setCustomJsonError] = useState<string | null>(null);
+
+  const { data: rawHandlers } = useHandlers();
+
+  const discoveredHandlers = useMemo(() => {
+    const list: Array<{ name: string; description?: string }> = [
+      { name: "email_send", description: "Send outbound email" },
+      { name: "webhook_delivery", description: "Deliver webhook payload with HMAC" },
+    ];
+    if (!rawHandlers) return list;
+
+    if (Array.isArray(rawHandlers)) {
+      for (const item of rawHandlers) {
+        const name = typeof item === "string" ? item : item.name;
+        const desc = typeof item === "string" ? undefined : item.description;
+        if (!list.some((h) => h.name === name)) {
+          list.push({ name, description: desc });
+        }
+      }
+    } else if (typeof rawHandlers === "object") {
+      for (const [key, val] of Object.entries(rawHandlers)) {
+        if (!list.some((h) => h.name === key)) {
+          const desc =
+            val && typeof val === "object" && "description" in val
+              ? (val as { description?: string }).description
+              : undefined;
+          list.push({ name: key, description: desc });
+        }
+      }
+    }
+    return list;
+  }, [rawHandlers]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["tasks", page, statusFilter, typeFilter, sort],
@@ -91,6 +127,15 @@ export default function Tasks() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
   });
 
+  const resetFormState = () => {
+    setShowModal(false);
+    setFormData(emptyForm());
+    setIsCustomType(false);
+    setCustomTypeName("");
+    setCustomJson("{\n  \n}");
+    setCustomJsonError(null);
+  };
+
   const createMutation = useMutation({
     mutationFn: async (payload: TaskCreateRequest) => {
       const response = await client.post("/tasks", payload);
@@ -98,8 +143,7 @@ export default function Tasks() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      setShowModal(false);
-      setFormData(emptyForm());
+      resetFormState();
       setPage(1);
     },
   });
@@ -108,16 +152,47 @@ export default function Tasks() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (formData.task_type !== "email_send" && formData.task_type !== "webhook_delivery") {
+      try {
+        const parsed = JSON.parse(customJson);
+        createMutation.mutate({ ...formData, payload: parsed });
+        return;
+      } catch {
+        setCustomJsonError("Please enter valid JSON before submitting.");
+        return;
+      }
+    }
     createMutation.mutate(formData);
   };
 
-  const onTypeChange = (type: TaskCreateRequest["task_type"]) => {
+  const onTypeChange = (type: string) => {
+    if (type === "__custom__") {
+      setIsCustomType(true);
+      setFormData((f) => ({
+        ...f,
+        task_type: customTypeName || "custom_task",
+        payload: {},
+      }));
+      setCustomJson("{\n  \n}");
+      setCustomJsonError(null);
+      return;
+    }
+
+    setIsCustomType(false);
+    let initialPayload: Record<string, unknown> = {};
+    if (type === "email_send") {
+      initialPayload = { to: "", subject: "", body: "" };
+    } else if (type === "webhook_delivery") {
+      initialPayload = { url: "", headers: {}, body: {} };
+    } else {
+      initialPayload = {};
+      setCustomJson("{\n  \n}");
+      setCustomJsonError(null);
+    }
+
     setFormData({
       task_type: type,
-      payload:
-        type === "email_send"
-          ? { to: "", subject: "", body: "" }
-          : { url: "", headers: {}, body: {} },
+      payload: initialPayload,
     });
   };
 
@@ -163,9 +238,9 @@ export default function Tasks() {
           aria-label="Filter by type"
         >
           <option value="">All types</option>
-          {Object.keys(taskTypeLabels).map((t) => (
-            <option key={t} value={t}>
-              {taskTypeLabels[t]}
+          {discoveredHandlers.map((h) => (
+            <option key={h.name} value={h.name}>
+              {taskTypeLabels[h.name] || h.name.replace(/_/g, " ")}
             </option>
           ))}
         </select>
@@ -313,19 +388,40 @@ export default function Tasks() {
         <Modal
           title="Submit New Task"
           subtitle="Queue a job for your worker pool"
-          onClose={() => setShowModal(false)}
+          onClose={resetFormState}
         >
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="Task Type">
               <select
-                value={formData.task_type}
-                onChange={(e) => onTypeChange(e.target.value as TaskCreateRequest["task_type"])}
+                value={isCustomType ? "__custom__" : formData.task_type}
+                onChange={(e) => onTypeChange(e.target.value)}
                 className="field__input"
               >
-                <option value="email_send">Email Send</option>
-                <option value="webhook_delivery">Webhook Delivery</option>
+                {discoveredHandlers.map((h) => (
+                  <option key={h.name} value={h.name}>
+                    {taskTypeLabels[h.name] || h.name.replace(/_/g, " ")}
+                    {h.description ? ` — ${h.description}` : ""}
+                  </option>
+                ))}
+                <option value="__custom__">+ Custom Task Handler Type…</option>
               </select>
             </Field>
+
+            {isCustomType && (
+              <Field label="Custom Handler Name">
+                <input
+                  type="text"
+                  required
+                  value={customTypeName}
+                  onChange={(e) => {
+                    setCustomTypeName(e.target.value);
+                    setFormData((f) => ({ ...f, task_type: e.target.value }));
+                  }}
+                  placeholder="e.g. image_resize, generate_invoice"
+                  className="field__input mono"
+                />
+              </Field>
+            )}
 
             {formData.task_type === "email_send" && (
               <>
@@ -391,6 +487,31 @@ export default function Tasks() {
               </>
             )}
 
+            {formData.task_type !== "email_send" && formData.task_type !== "webhook_delivery" && (
+              <Field label="Payload (JSON)" hint="Valid JSON payload passed to handler">
+                <textarea
+                  value={customJson}
+                  onChange={(e) => {
+                    setCustomJson(e.target.value);
+                    try {
+                      const parsed = JSON.parse(e.target.value);
+                      setFormData((f) => ({ ...f, payload: parsed }));
+                      setCustomJsonError(null);
+                    } catch (err: any) {
+                      setCustomJsonError("Invalid JSON: " + err.message);
+                    }
+                  }}
+                  rows={5}
+                  className="field__input mono text-xs"
+                  placeholder={`{\n  "param": "value"\n}`}
+                  required
+                />
+                {customJsonError && (
+                  <p className="text-xs text-rose-400 mt-1">{customJsonError}</p>
+                )}
+              </Field>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <Field label="Priority" hint="-100 … 100, higher runs first">
                 <input
@@ -442,7 +563,7 @@ export default function Tasks() {
             )}
 
             <div className="flex items-center justify-end gap-3 pt-4">
-              <Button variant="quiet" type="button" onClick={() => setShowModal(false)}>
+              <Button variant="quiet" type="button" onClick={resetFormState}>
                 Cancel
               </Button>
               <Button

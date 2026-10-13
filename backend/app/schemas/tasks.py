@@ -125,6 +125,7 @@ class TaskResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     task_type: str
+    payload: dict[str, Any] = Field(default_factory=dict)
     status: str
     priority: int
     idempotency_key: str | None
@@ -181,6 +182,7 @@ class TaskResponse(BaseModel):
             "id": task.id,
             "user_id": task.user_id,
             "task_type": task.task_type,
+            "payload": getattr(task, "payload", None) or {},
             "status": task.status,
             "priority": task.priority,
             "idempotency_key": task.idempotency_key,

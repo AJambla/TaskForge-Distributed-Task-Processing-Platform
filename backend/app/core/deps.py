@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy import select, update
@@ -26,6 +26,7 @@ security = HTTPBearer(auto_error=False)
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    token_query: Annotated[str | None, Query(alias="token")] = None,
 ) -> User:
     """
     Extract and validate the current user from either:
@@ -35,14 +36,13 @@ async def get_current_user(
     Returns the authenticated User model instance.
     Raises HTTP 401 if credentials are missing or invalid.
     """
-    if not credentials:
+    token = credentials.credentials if credentials else token_query
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": {"code": "UNAUTHENTICATED", "message": "Authorization header required."}},
+            detail={"error": {"code": "UNAUTHENTICATED", "message": "Authorization header or token required."}},
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    token = credentials.credentials
 
     # Dispatch by token format
     if token.startswith("tf_live_"):
