@@ -1,6 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import client from "./client";
-import type { MetricsSummaryResponse, QueueMetrics, QueueStats, Task, TaskListResponse, Worker } from "../types";
+import type {
+  APIKey,
+  DLQInspectionResponse,
+  HandlerInfo,
+  MetricsSummaryResponse,
+  QueueMetrics,
+  QueueStats,
+  Task,
+  TaskListResponse,
+  Worker,
+} from "../types";
 
 export function useMetricsSummary(enabled = true) {
   return useQuery({
@@ -83,3 +93,39 @@ export function bucketTasksByHour(tasks: Task[], hours = 12): { points: number[]
   }
   return { points: buckets, labels };
 }
+
+export function useApiKeys(enabled = true) {
+  return useQuery({
+    queryKey: ["api-keys"],
+    queryFn: async () => {
+      const res = await client.get<APIKey[]>("/api-keys");
+      return res.data;
+    },
+    enabled,
+  });
+}
+
+export function useHandlers(enabled = true) {
+  return useQuery({
+    queryKey: ["handlers"],
+    queryFn: async () => {
+      const res = await client.get<{ handlers: string[] | HandlerInfo[] }>("/handlers");
+      return res.data.handlers;
+    },
+    staleTime: 60_000,
+    enabled,
+  });
+}
+
+export function useDLQInspection(enabled = true) {
+  return useQuery({
+    queryKey: ["queues", "dlq"],
+    queryFn: async () => {
+      const res = await client.get<DLQInspectionResponse>("/queues/dlq");
+      return res.data;
+    },
+    refetchInterval: 10_000,
+    enabled,
+  });
+}
+

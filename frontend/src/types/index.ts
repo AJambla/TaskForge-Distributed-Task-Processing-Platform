@@ -20,20 +20,22 @@ export interface LoginResponse {
   expires_in: number;
 }
 
-export interface Task {
-  id: string;
-  user_id: string;
-  task_type: string;
-  status: string;
-  priority: number;
-  idempotency_key: string | null;
-  max_attempts: number;
-  attempt_count: number;
-  run_at: string | null;
-  recurrence_rule: string | null;
-  created_at: string;
-  started_at: string | null;
-  completed_at: string | null;
+export type FailureClassification =
+  | "TRANSIENT_ERROR"
+  | "RATE_LIMITED"
+  | "TIMEOUT"
+  | "WORKER_CRASH"
+  | "FATAL_ERROR";
+
+export interface FailureDiagnostics {
+  failed_attempt: number;
+  classification: FailureClassification;
+  cause_description: string;
+  recovery_action: string;
+  will_retry: boolean;
+  next_retry_at: string | null;
+  recovery_worker_id: string | null;
+  recovery_duration_seconds: number | null;
 }
 
 export interface TaskAttempt {
@@ -46,6 +48,29 @@ export interface TaskAttempt {
   outcome: string | null;
   error_message: string | null;
   error_detail: Record<string, unknown> | null;
+  trace_id?: string | null;
+}
+
+export interface Task {
+  id: string;
+  user_id: string;
+  task_type: string;
+  payload: Record<string, unknown>;
+  status: string;
+  priority: number;
+  idempotency_key: string | null;
+  max_attempts: number;
+  attempt_count: number;
+  run_at: string | null;
+  recurrence_rule: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  result?: Record<string, unknown> | null;
+  trace_id?: string | null;
+  trace_url?: string | null;
+  attempts?: TaskAttempt[];
+  diagnostics?: FailureDiagnostics | null;
 }
 
 export interface TaskCreateRequest {
@@ -240,4 +265,41 @@ export interface MetricsSummaryResponse {
   queues: QueuesSnapshot;
   links: ExternalLinks;
 }
+
+export interface HandlerInfo {
+  name: string;
+  description?: string;
+  timeout_seconds?: number;
+  max_retries?: number;
+}
+
+export interface DLQInspectionResponse {
+  dlq_depths: Record<string, number>;
+  dead_letter_count: number;
+  recent_dead_tasks: Array<{
+    id: string;
+    task_type: string;
+    attempt_count: number;
+    created_at: string | null;
+    completed_at: string | null;
+  }>;
+}
+
+export interface APIKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface CreateAPIKeyResponse {
+  id: string;
+  name: string;
+  key: string;
+  key_prefix: string;
+  created_at: string;
+}
+
 

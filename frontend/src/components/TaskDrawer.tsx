@@ -1,13 +1,16 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 import client from "../api/client";
 import type { Task } from "../types";
 import StatusPill from "./ui/StatusPill";
 import { Spinner } from "./ui/Field";
 import { durationBetween, formatSeconds } from "../lib/format";
 import { Button } from "./ui/Button";
+import FailureDiagnosticsCard from "./FailureDiagnosticsCard";
+import JsonViewer from "./JsonViewer";
+import { useTaskEvents } from "../hooks/useTaskEvents";
 
 interface TaskDrawerProps {
   taskId: string | null;
@@ -34,6 +37,11 @@ export default function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
     },
     enabled: Boolean(taskId),
   });
+
+  const isTerminal = task
+    ? ["succeeded", "failed", "dead_letter", "cancelled"].includes(task.status)
+    : false;
+  useTaskEvents(taskId, !isTerminal);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["tasks"] });
@@ -71,7 +79,7 @@ export default function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Task details">
+      <aside className="drawer overflow-y-auto" role="dialog" aria-modal="true" aria-label="Task details">
         <header className="drawer__head">
           <div>
             <p className="drawer__eyebrow">Task</p>
@@ -90,12 +98,31 @@ export default function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
 
         {task && (
           <>
-            <div className="drawer__status">
-              <StatusPill status={task.status} />
-              {task.recurrence_rule && (
-                <span className="chip chip--queued">recurring · {task.recurrence_rule}</span>
+            <div className="drawer__status flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <StatusPill status={task.status} />
+                {task.recurrence_rule && (
+                  <span className="chip chip--queued">recurring · {task.recurrence_rule}</span>
+                )}
+              </div>
+              {task.trace_url && (
+                <a
+                  href={task.trace_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 mono text-xs text-blue-400 hover:underline"
+                  title="View trace in Jaeger"
+                >
+                  <ExternalLink size={12} /> Jaeger
+                </a>
               )}
             </div>
+
+            {task.diagnostics && (
+              <div className="my-3">
+                <FailureDiagnosticsCard diagnostics={task.diagnostics} />
+              </div>
+            )}
 
             <div className="drawer__rows">
               <Row label="Type">{task.task_type.replace(/_/g, " ")}</Row>
@@ -113,6 +140,22 @@ export default function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
               <Row label="Scheduled run">
                 {task.run_at ? new Date(task.run_at).toLocaleString() : "—"}
               </Row>
+            </div>
+
+            <div className="my-4 space-y-3">
+              <JsonViewer
+                data={task.payload}
+                label="Input Payload"
+                defaultExpanded={false}
+                emptyText="No payload"
+              />
+              <JsonViewer
+                data={task.result}
+                label="Execution Result"
+                defaultExpanded={true}
+                emptyText={task.status === "succeeded" ? "Completed with no return value" : "No result"}
+                highlightSuccess={task.status === "succeeded" && Boolean(task.result)}
+              />
             </div>
 
             <div className="drawer__timeline">
